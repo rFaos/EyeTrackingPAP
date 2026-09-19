@@ -1,0 +1,33 @@
+# ============================================================
+# Eye-Tracking Suite v3.0  —  Dependencias
+# ============================================================
+#
+# Instalación:
+#   C:\Python313\python.exe -m pip install -r requirements.txt
+#
+# Nota: este proyecto NO usa redes neuronales para estimar la mirada.
+# La invariancia a la cabeza se consigue con geometría 3D (solvePnP +
+# reconstrucción del globo ocular), así que no hace falta descargar
+# ningún modelo ni tener internet después de instalar.
+
+# ── Visión computacional ─────────────────────────────────────
+opencv-python>=4.8.0
+mediapipe>=1.0.0          # Face Landmarker: 478 puntos faciales
+
+# ── Cálculo numérico y señal ─────────────────────────────────
+numpy>=1.24.0
+scipy>=1.10.0             # gaussian_filter para los heatmaps
+
+# ── Resolución de pantalla ───────────────────────────────────
+screeninfo>=0.8.1
+
+# tkinter viene con Python. OJO: la instalación de Python que uses
+# tiene que incluir Tcl/Tk. En esta máquina funciona
+# C:\Python313\python.exe; el `python` del PATH no lo trae.
+#
+# La transparencia del overlay usa ctypes (librería estándar), así que
+# NO hace falta pywin32.
+
+# ── Opcionales: análisis posterior de los CSV ────────────────
+# pandas>=2.0.0
+# matplotlib>=3.7.0

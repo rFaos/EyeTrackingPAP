@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Página de prueba — Eye Tracking</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: #f4f6fb; color: #1a1f36; line-height: 1.55;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 48px; background: #fff;
+    border-bottom: 1px solid #e2e6f0; position: sticky; top: 0;
+  }
+  .logo { font-size: 24px; font-weight: 800; letter-spacing: -.5px; }
+  .logo span { color: #2563eb; }
+  nav a {
+    margin-left: 28px; color: #5a6480; text-decoration: none;
+    font-size: 15px; font-weight: 500;
+  }
+  nav a.cta {
+    background: #2563eb; color: #fff; padding: 9px 20px;
+    border-radius: 8px;
+  }
+  .hero {
+    display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px;
+    align-items: center; padding: 56px 48px; max-width: 1280px; margin: 0 auto;
+  }
+  .hero h1 { font-size: 46px; line-height: 1.1; letter-spacing: -1.5px; }
+  .hero h1 em { color: #2563eb; font-style: normal; }
+  .hero p { margin-top: 18px; font-size: 17px; color: #5a6480; }
+  .hero .actions { margin-top: 28px; display: flex; gap: 14px; }
+  .btn-primary {
+    background: #2563eb; color: #fff; border: none; padding: 14px 30px;
+    border-radius: 9px; font-size: 16px; font-weight: 600; cursor: pointer;
+  }
+  .btn-ghost {
+    background: #fff; color: #2563eb; border: 2px solid #c7d6f7;
+    padding: 12px 26px; border-radius: 9px; font-size: 16px;
+    font-weight: 600; cursor: pointer;
+  }
+  .visual {
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    border-radius: 18px; height: 300px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 66px;
+  }
+  .cards {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+    padding: 8px 48px 56px; max-width: 1280px; margin: 0 auto;
+  }
+  .card {
+    background: #fff; border: 1px solid #e2e6f0; border-radius: 14px;
+    padding: 26px;
+  }
+  .card .ico { font-size: 30px; }
+  .card h3 { margin: 12px 0 8px; font-size: 18px; }
+  .card p { font-size: 14px; color: #5a6480; }
+  .stats {
+    display: flex; justify-content: space-around; background: #fff;
+    border-top: 1px solid #e2e6f0; border-bottom: 1px solid #e2e6f0;
+    padding: 34px 48px;
+  }
+  .stat b { display: block; font-size: 32px; color: #2563eb; }
+  .stat span { font-size: 14px; color: #5a6480; }
+  footer {
+    text-align: center; padding: 34px; color: #8b93a8; font-size: 14px;
+  }
+  .hint {
+    max-width: 1280px; margin: 0 auto; padding: 0 48px 30px;
+    font-size: 13px; color: #8b93a8;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">PAP<span>·</span>EyeTracking</div>
+  <nav>
+    <a href="#">Producto</a>
+    <a href="#">Precios</a>
+    <a href="#">Docs</a>
+    <a href="#" class="cta">Empezar gratis</a>
+  </nav>
+</header>
+
+<section class="hero">
+  <div>
+    <h1>Descubre <em>dónde mira</em> la gente de verdad</h1>
+    <p>
+      Esta es una página de prueba diseñada para eye tracking. Cada zona tiene
+      un color y una forma distintos, para que puedas comprobar en el heatmap
+      y en el informe de fijaciones a qué parte de la página fue tu mirada
+      primero y cuánto tiempo se quedó ahí.
+    </p>
+    <div class="actions">
+      <button class="btn-primary">Probar ahora</button>
+      <button class="btn-ghost">Ver demo</button>
+    </div>
+  </div>
+  <div class="visual">👁️</div>
+</section>
+
+<section class="cards">
+  <div class="card">
+    <div class="ico">🎯</div>
+    <h3>Fijaciones</h3>
+    <p>Dónde se detiene la mirada y durante cuántos milisegundos.</p>
+  </div>
+  <div class="card">
+    <div class="ico">⚡</div>
+    <h3>Sacadas</h3>
+    <p>Los saltos rápidos entre un punto de interés y el siguiente.</p>
+  </div>
+  <div class="card">
+    <div class="ico">🔥</div>
+    <h3>Mapas de calor</h3>
+    <p>La zona de mayor atención de un vistazo, en densidad o dwell time.</p>
+  </div>
+</section>
+
+<section class="stats">
+  <div class="stat"><b>9</b><span>puntos de calibración</span></div>
+  <div class="stat"><b>30</b><span>Hz de muestreo</span></div>
+  <div class="stat"><b>3</b><span>tipos de heatmap</span></div>
+  <div class="stat"><b>2</b><span>segundos de fijación típicos</span></div>
+</section>
+
+<p class="hint">
+  Sugerencia para la prueba: mira primero el título de la izquierda, después el
+  bloque morado de la derecha, luego las tres tarjetas y por último el botón
+  azul del menú. Después genera el informe y compara el orden real con el que
+  esperabas.
+</p>
+
+<footer>
+  Página de prueba · Eye-Tracking Suite — Proyecto PAP
+</footer>
+
+</body>
+</html>
