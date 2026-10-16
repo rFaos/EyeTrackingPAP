@@ -1,0 +1,69 @@
+{
+  "id": "demo_pagina_prueba",
+  "name": "Demo · página de prueba (3 tareas)",
+  "version": "1.0",
+  "description": "Estudio de ensayo sobre pagina_prueba.html. Sirve para practicar el flujo completo antes de usar el sitio real: consentimiento, calibración, 3 tareas, validación, informe y análisis grupal.",
+  "url": "http://127.0.0.1:4243/pagina_prueba.html",
+
+  "reference_screen": { "width": 1920, "height": 1080 },
+  "display": { "width_cm": null, "distance_cm": 60 },
+
+  "groups": [],
+
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Encontrar el botón de registro",
+      "instruction": "Encuentra el botón azul para empezar a usar el producto gratis (en el menú superior) y haz clic en él.",
+      "target_aoi": "cta_empezar",
+      "time_limit_s": 90,
+      "start_url": "http://127.0.0.1:4243/pagina_prueba.html"
+    },
+    {
+      "id": 2,
+      "title": "Leer un dato de las estadísticas",
+      "instruction": "Averigua cuántos puntos de calibración se usan, según la franja de números de la página.",
+      "target_aoi": "estadisticas",
+      "time_limit_s": 90,
+      "start_url": "http://127.0.0.1:4243/pagina_prueba.html"
+    },
+    {
+      "id": 3,
+      "title": "Buscar en las preguntas frecuentes",
+      "instruction": "Baja hasta las preguntas frecuentes y averigua cuánto tarda la calibración.",
+      "target_aoi": "faq_calibracion",
+      "time_limit_s": 120,
+      "start_url": "http://127.0.0.1:4243/pagina_prueba.html"
+    }
+  ],
+
+  "aois": [
+    { "id": "menu",            "label": "Menú superior",        "selector": "header" },
+    { "id": "cta_empezar",     "label": "Botón «Empezar gratis»", "selector": "#cta-empezar", "tasks": [1] },
+    { "id": "titulo",          "label": "Título principal",     "selector": ".hero h1" },
+    { "id": "boton_probar",    "label": "Botón «Probar ahora»", "selector": ".btn-primary" },
+    { "id": "visual",          "label": "Imagen principal",     "selector": ".visual" },
+    { "id": "tarjetas",        "label": "Tarjetas",             "selector": ".cards" },
+    { "id": "estadisticas",    "label": "Franja de estadísticas", "selector": "#stats", "tasks": [2] },
+    { "id": "faq",             "label": "Preguntas frecuentes", "selector": "#faq", "tasks": [3] },
+    { "id": "faq_calibracion", "label": "FAQ · calibración",    "selector": "#faq-3", "tasks": [3] }
+  ],
+
+  "quality": {
+    "min_face_pct": 80,
+    "min_sample_hz": 8,
+    "warn_sample_hz": 12,
+    "max_cal_rms_px": 300,
+    "max_validation_px": 350,
+    "min_duration_s": 20,
+    "min_tasks_done": 1
+  },
+
+  "analysis": { "aoi_margin_px": 0, "min_fixation_ms": 150, "heatmap_sigma_px": 55 },
+
+  "show_gaze_overlay": false,
+  "task_panel": { "position": "bottom" },
+  "capture_screenshots": true,
+  "final_validation": true,
+  "bridge": { "port": 4243, "hosts": ["127.0.0.1", "localhost"] }
+}

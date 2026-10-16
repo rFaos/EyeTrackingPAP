@@ -10,6 +10,9 @@ Comprueba con la cámara real:
 
 from __future__ import annotations
 
+import os, sys                                                      # noqa: E401
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import math
 import time
 import numpy as np

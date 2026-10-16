@@ -120,6 +120,8 @@ class GazeSample:
     pose_ok:       bool = True  # False si la pose cefálica no es plausible
     calibrated:    bool = False # True si la calibración estaba activa
     raw_feat:      dict = field(default_factory=dict)
+    ear:           float = 0.0  # apertura del ojo (Eye Aspect Ratio)
+    blink:         bool = False # True si la muestra cae dentro de un parpadeo
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1058,6 +1060,7 @@ class GazeTracker:
         self._head_pose     = _HeadPoseEstimator()
         self._eye_extractor = _EyeGazeExtractor()
         self._pupil         = None            # se crea una sola vez
+        self._blink         = None            # BlinkDetector (junto al anterior)
         self._filter        = OneEuroFilter2D(min_cutoff=0.4, beta=0.005)
 
         # Filtro del vector geométrico (Ex,Ey,Ez,dx,dy,dz).
@@ -1235,8 +1238,9 @@ class GazeTracker:
 
     def _loop(self) -> None:
         if self._pupil is None:
-            from .pupillometry import PupilTracker
+            from .pupillometry import PupilTracker, BlinkDetector
             self._pupil = PupilTracker()
+            self._blink = BlinkDetector()
 
         cap = self._open(self.camera_index)
         self.ready.set()
@@ -1323,6 +1327,13 @@ class GazeTracker:
                     sample.pupil_size = self._pupil.estimate(lm, w, h)
                 except Exception:
                     sample.pupil_size = 0.0
+
+                # ── Parpadeo (apertura del ojo) ───────────────────────
+                try:
+                    sample.ear = self._blink.ear(lm, w, h)
+                    sample.blink = self._blink.update(sample.ear, t_now)
+                except Exception:
+                    sample.ear, sample.blink = 0.0, False
 
                 # ── Pose cefálica ─────────────────────────────────────
                 pose = self._head_pose.estimate(lm, w, h)

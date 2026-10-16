@@ -45,7 +45,13 @@ class CalibrationEngine:
         tracker.start()
 
         engine = CalibrationEngine(tracker, cal, on_done=mi_callback)
-        engine.run()          # bloquea hasta terminar
+        engine.run()                  # solo: bloquea hasta terminar
+        engine.run(master=root)       # dentro de una app Tk: NO bloquea;
+                                      # avisa con on_done al terminar
+
+    Con ``master`` la ventana es un ``Toplevel`` del hilo principal.  Es
+    obligatorio en macOS: Tk no admite crear ventanas desde otro hilo y la
+    aplicación se cierra de golpe.
     """
 
     # ── Tiempos (segundos) ───────────────────────────────────────────────
@@ -78,6 +84,7 @@ class CalibrationEngine:
         self._pulse_dir   = 1.0
         self._point_n     = 0
         self._cancelled   = False
+        self._closed      = False
         self._face_seen   = 0
         self._face_miss   = 0
 
@@ -135,6 +142,8 @@ class CalibrationEngine:
     # ── Ticker principal (~60 Hz) ────────────────────────────────────────
 
     def _tick(self) -> None:
+        if self._closed:
+            return
         assert self._root and self._lbl and self._prog and self._stat
 
         if self._step >= self.n_pts:
@@ -212,6 +221,8 @@ class CalibrationEngine:
     # ── Finalización ─────────────────────────────────────────────────────
 
     def _finish(self) -> None:
+        if self._closed:
+            return
         assert self._canvas and self._lbl and self._prog and self._stat
         self._canvas.delete("dot")
 
@@ -247,6 +258,9 @@ class CalibrationEngine:
         self._root.after(2600, self._close)
 
     def _close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
         try:
             if self._root is not None:
                 self._root.destroy()
@@ -264,9 +278,16 @@ class CalibrationEngine:
 
     # ── Interfaz pública ─────────────────────────────────────────────────
 
-    def run(self) -> None:
-        """Construye la ventana fullscreen y bloquea hasta terminar."""
+    def run(self, master: Optional[tk.Misc] = None) -> None:
+        """
+        Construye la ventana fullscreen.
+
+        Sin ``master`` crea su propio ``Tk`` y bloquea hasta terminar.  Con
+        ``master`` abre un ``Toplevel`` y regresa de inmediato: el resultado
+        llega por ``on_done``.
+        """
         self.calibrator.reset()
+        self._closed      = False
         self._step        = 0
         self._phase       = "WAIT"
         self._phase_start = time.perf_counter()
@@ -278,7 +299,7 @@ class CalibrationEngine:
         _latest = self.tracker.get_latest()
         self._cursor = _latest.frame_id if _latest is not None else 0
 
-        root = tk.Tk()
+        root = tk.Tk() if master is None else tk.Toplevel(master)
         self._root = root
         root.title("Calibración Eye Tracking")
         root.configure(bg=_BG)
@@ -303,26 +324,37 @@ class CalibrationEngine:
         canvas.pack(fill="both", expand=True)
         self._canvas = canvas
 
+        # Los puntos están en filas al 10 %, 50 % y 90 % de la altura: los
+        # textos van en las franjas libres entre filas (30 % y 70–75 %).
         self._lbl = tk.Label(root, text="Preparando…", fg="white", bg=_BG,
                              font=("Segoe UI", 22, "bold"))
-        self._lbl.place(relx=0.5, rely=0.06, anchor="center")
-
-        self._prog = tk.Label(root, text="", fg=_DIM, bg=_BG,
-                              font=("Segoe UI", 15))
-        self._prog.place(relx=0.5, rely=0.94, anchor="center")
+        self._lbl.place(relx=0.5, rely=0.30, anchor="center")
 
         self._stat = tk.Label(root, text="Iniciando cámara…", fg=_DIM, bg=_BG,
                               font=("Segoe UI", 13))
-        self._stat.place(relx=0.5, rely=0.90, anchor="center")
+        self._stat.place(relx=0.5, rely=0.70, anchor="center")
+
+        self._prog = tk.Label(root, text="", fg=_DIM, bg=_BG,
+                              font=("Segoe UI", 15))
+        self._prog.place(relx=0.5, rely=0.75, anchor="center")
 
         tk.Label(root, text="ESC para cancelar", fg="#444444", bg=_BG,
                  font=("Segoe UI", 10)).place(relx=0.99, rely=0.99,
                                               anchor="se")
 
+        try:
+            root.lift()
+            root.focus_force()
+        except Exception:
+            pass
         root.after(500, self._tick)
-        root.mainloop()
+        if master is None:
+            root.mainloop()
 
     def _cancel(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
         self._cancelled = True
         try:
             if self._root is not None:

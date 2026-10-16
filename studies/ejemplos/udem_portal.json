@@ -1,0 +1,81 @@
+{
+  "_LEEME": "Estudio del Portal UDEM. Antes de la prueba piloto: (1) reemplaza los selectores '#REEMPLAZAR-...' de los AOI objetivo (Chrome → clic derecho sobre el elemento → Inspeccionar → clic derecho en el código → Copy → Copy selector); (2) si el portal te lleva a otro dominio después de iniciar sesión, agrégalo a bridge.hosts; (3) cambia '[Nombre del laboratorio]', la fecha de conservación y el contacto del responsable en consent_text. Los campos que empiezan con _ se ignoran.",
+
+  "id": "udem_portal_2026",
+  "name": "Portal UDEM · registro, TOEFL y alta/baja",
+  "version": "1.0",
+  "description": "Prueba de usabilidad con estudiantes de la Universidad de Monterrey en el Portal UDEM: registro de materias, consulta del puntaje TOEFL y alta o baja de asignaturas.",
+  "url": "https://portalc.udem.edu/",
+
+  "consent_version": "UDEM-1",
+  "consent_text": "CARTA DE CONSENTIMIENTO INFORMADO\nPrueba de usabilidad con seguimiento ocular · Portal UDEM\n\nObjetivo de la prueba: evaluar el comportamiento visual y la interacción al realizar tareas específicas en el Portal UDEM, con el fin de identificar áreas de oportunidad en su experiencia de usuario (UX/UI). Se evalúa el portal, no a ti ni a tu desempeño.\n\nProtocolo: la sesión se realiza en un entorno controlado en el [Nombre del laboratorio] y dura aproximadamente 25 minutos. Primero mirarás unos puntos en la pantalla para calibrar el sistema (unos 2 minutos). Después harás tres tareas en el Portal UDEM: registro de materias, consulta de tu puntaje TOEFL y alta o baja de asignaturas. Las tareas de registro y de alta/baja son simulaciones: llegarás hasta la pantalla del trámite sin confirmarlo, por lo que tu inscripción no se modificará.\n\nUso de la cámara: la cámara web de esta computadora capta tu rostro únicamente para calcular, en tiempo real, hacia qué punto de la pantalla miras. NO se graba ni se guarda video, fotografías ni audio.\n\nDatos que se registran: coordenadas de la mirada en la pantalla y sus tiempos; parpadeos y una estimación del tamaño de la pupila; desplazamiento (scroll), clics (posición y texto del botón pulsado) y direcciones de las páginas del portal que visites; duración de cada tarea y si se completó; precisión de la calibración. NO se registran tu contraseña, lo que escribes en formularios ni capturas de pantalla de tu cuenta.\n\nTu información académica: entrarás al portal con tu propia cuenta, que muestra datos personales (materias, puntaje TOEFL). El prototipo no guarda esa información y el equipo no la anotará ni la usará.\n\nPrivacidad y confidencialidad: tus datos se identifican con un código de participante (por ejemplo P07), nunca con tu nombre. Se usarán únicamente con fines académicos y de desarrollo de este proyecto; los resultados se presentarán de forma agregada, sin identificarte, y no se usarán con fines comerciales. Los datos se guardan en equipos del proyecto y se eliminarán a más tardar el [fecha].\n\nParticipación voluntaria: puedes detener la prueba en cualquier momento, sin dar explicaciones (díselo al facilitador). Puedes pedir que se eliminen tus datos durante la sesión o después, hasta el [fecha], indicando tu código de participante. No participar o retirarte no afecta tus calificaciones ni tu relación con la Universidad de Monterrey.\n\nRiesgos: la prueba es de riesgo mínimo. Puede causar un cansancio visual leve; puedes pedir una pausa cuando lo necesites.\n\nContacto: [Nombre del responsable] · [correo electrónico].\n\nDeclaración: he leído y comprendido esta información, mis dudas han sido aclaradas por el equipo responsable y otorgo mi consentimiento libre y voluntario para participar bajo el protocolo descrito.",
+
+  "reference_screen": { "width": 1920, "height": 1080 },
+  "display": { "width_cm": null, "distance_cm": 60 },
+
+  "groups": [],
+
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Registro de materias",
+      "instruction": "Imagina que vas a inscribir tus materias del próximo semestre. Desde el portal, llega a la pantalla donde se registran materias. NO confirmes ninguna inscripción: cuando estés en esa pantalla, pulsa «Terminé».",
+      "target_aoi": "obj_registro",
+      "time_limit_s": 240,
+      "start_url": "https://portalc.udem.edu/"
+    },
+    {
+      "id": 2,
+      "title": "Consulta del puntaje TOEFL",
+      "instruction": "Consulta cuál es tu puntaje TOEFL registrado en el portal. Cuando lo veas en pantalla, pulsa «Terminé».",
+      "target_aoi": "obj_toefl",
+      "time_limit_s": 180,
+      "start_url": "https://portalc.udem.edu/"
+    },
+    {
+      "id": 3,
+      "title": "Alta o baja de asignaturas",
+      "instruction": "Imagina que necesitas dar de alta o de baja una materia. Encuentra dónde se hace ese trámite y llega hasta su pantalla. NO confirmes ningún cambio: cuando estés ahí, pulsa «Terminé».",
+      "target_aoi": "obj_alta_baja",
+      "time_limit_s": 240,
+      "start_url": "https://portalc.udem.edu/"
+    }
+  ],
+
+  "aois": [
+    { "id": "encabezado", "label": "Encabezado", "selector": "header" },
+    { "id": "menu",       "label": "Menú de navegación", "selector": "nav" },
+    { "id": "contenido",  "label": "Contenido principal", "selector": "main" },
+
+    { "_nota": "Opcional: AOI intermedios por tarea (p. ej. la opción de menú que lleva al trámite). Ayudan a ver si el participante encontró el camino aunque no llegara al final.",
+      "id": "menu_registro",    "label": "Opción de menú · registro",  "selector": "#REEMPLAZAR-menu-registro",  "tasks": [1] },
+    { "id": "obj_registro",     "label": "Pantalla/botón de registro de materias", "selector": "#REEMPLAZAR-registro", "tasks": [1] },
+
+    { "id": "menu_toefl",       "label": "Opción de menú · TOEFL",     "selector": "#REEMPLAZAR-menu-toefl",     "tasks": [2] },
+    { "id": "obj_toefl",        "label": "Puntaje TOEFL",              "selector": "#REEMPLAZAR-toefl",          "tasks": [2] },
+
+    { "id": "menu_alta_baja",   "label": "Opción de menú · alta/baja", "selector": "#REEMPLAZAR-menu-alta-baja", "tasks": [3] },
+    { "id": "obj_alta_baja",    "label": "Trámite de alta/baja",       "selector": "#REEMPLAZAR-alta-baja",      "tasks": [3] }
+  ],
+
+  "quality": {
+    "min_face_pct": 80,
+    "min_sample_hz": 8,
+    "warn_sample_hz": 12,
+    "max_cal_rms_px": 300,
+    "max_validation_px": 350,
+    "min_duration_s": 20,
+    "min_tasks_done": 1
+  },
+
+  "analysis": { "aoi_margin_px": 20, "min_fixation_ms": 150, "heatmap_sigma_px": 55 },
+
+  "show_gaze_overlay": false,
+  "task_panel": { "position": "bottom" },
+  "_capture_screenshots": "Desactivado: el portal muestra datos personales (materias, TOEFL). Para tener fondo en los heatmaps, toma tú las capturas con una cuenta de prueba, guárdalas junto a este JSON y añade \"background\": \"archivo.png\" a cada tarea.",
+  "capture_screenshots": false,
+  "final_validation": true,
+  "_review_at_end": "false: el participante no ve la ventana de revisión; el equipo marca si cada tarea fue correcta después (Resultados → Revisar tareas).",
+  "review_at_end": false,
+  "bridge": { "port": 4243, "hosts": ["portalc.udem.edu"] }
+}

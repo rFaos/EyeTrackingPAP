@@ -12,6 +12,9 @@ Con esa cifra se puede predecir el error de mirada esperado.
 
 from __future__ import annotations
 
+import os, sys                                                      # noqa: E401
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import math
 import time
 import numpy as np
@@ -28,7 +31,7 @@ IRIS = [468, 473]
 EYE_LM = [33, 133, 159, 145, 263, 362, 386, 374]
 
 opts = mp_vis.FaceLandmarkerOptions(
-    base_options=mp_py.BaseOptions(model_asset_path="face_landmarker.task"),
+    base_options=mp_py.BaseOptions(model_asset_path=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "face_landmarker.task")),
     running_mode=mp_vis.RunningMode.VIDEO,
     num_faces=1,
     min_face_detection_confidence=0.4,

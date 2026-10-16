@@ -1,75 +1,56 @@
 """
-et_suite/heatmap_generator.py  —  Generador de Heatmaps Post-Sesión
-====================================================================
-Toma el CSV generado por DataLogger y produce dos tipos de heatmap:
+et_suite/heatmap_generator.py  —  Heatmaps, scanpaths y mapas de AOI
+=====================================================================
+Tres tipos de visualización:
 
-  1. Densidad de fijaciones  — acumula puntos de fijación, aplica Gaussian blur
-  2. Dwell time (permanencia) — pondera por duración acumulada de fijación
+  1. Densidad de fijaciones — cada fijación suma 1 (¿dónde miró más veces?)
+  2. Dwell time             — cada fijación pesa su duración (¿cuánto tiempo?)
+  3. Scanpath               — fijaciones numeradas en orden (¿en qué orden?)
+
+Novedades respecto a la versión anterior:
+
+  • Por TAREA: un juego de imágenes por cada tarea del estudio.
+  • Se dibujan los rectángulos de los AOI con su nombre.
+  • Mapas en coordenadas de PÁGINA cuando hay scroll (puente web): el calor se
+    acumula sobre la página completa, no sobre la ventana visible.
+  • Mapas AGREGADOS de varios participantes (``render_group``), donde cada
+    persona pesa lo mismo aunque haya mirado más tiempo.
 
 Técnica:
-  • scipy.ndimage.gaussian_filter para suavizado Gaussiano 2D
-  • cv2.COLORMAP_JET (o cualquier otro de OpenCV) como mapa de color térmico
-  • Blend alpha sobre imagen de fondo (screenshot o fondo blanco)
-  • Marcadores de fijación opcionales con escaneo de ruta (scanpath)
+    • scipy.ndimage.gaussian_filter para suavizado Gaussiano 2D
+    • cv2.COLORMAP_JET (o cualquier otro de OpenCV) como mapa de calor
+    • Blend alpha sobre imagen de fondo (captura de pantalla o fondo blanco)
 
-Uso::
+API antigua (sigue funcionando)::
 
     gen = HeatmapGenerator(screen_w=1920, screen_h=1080)
-
-    # Densidad de fijaciones
-    out1 = gen.fixation_density("sessions/session.csv",
-                                background="screenshot.png")
-
-    # Dwell time
-    out2 = gen.dwell_time("sessions/session.csv",
-                          background="screenshot.png")
-
-    # Scanpath
-    out3 = gen.scanpath("sessions/session.csv",
-                         background="screenshot.png")
+    gen.fixation_density("sessions/s.csv", background="captura.png")
+    gen.dwell_time("sessions/s.csv")
+    gen.scanpath("sessions/s.csv")
 """
 
 from __future__ import annotations
 
-import csv
 import os
-from dataclasses import dataclass
-from typing import List, Optional
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
 from scipy.ndimage import gaussian_filter
 
+from .metrics import MIN_FIXATION_MS, Analysis, Fix, extract_fixations, read_rows
 
-# ════════════════════════════════════════════════════════════════════════════
-#  Constantes
-# ════════════════════════════════════════════════════════════════════════════
+# Rect de AOI para dibujar: (etiqueta, x0, y0, x1, y1)
+Rect = Tuple[str, float, float, float, float]
 
-# Duración mínima para que un grupo de muestras cuente como fijación.
-# Coincide con el umbral del clasificador I-DT: por debajo de ~150 ms el ojo
-# está en tránsito, no fijando.
-MIN_FIXATION_MS: float = 150.0
+_AOI_COLOR = (200, 90, 20)       # BGR: azul oscuro, se lee sobre calor y blanco
+_MAX_PAGE_W = 1600               # tope de ancho del mapa de página (px)
+_MAX_PAGE_H = 7000               # tope de alto
 
-
-# ════════════════════════════════════════════════════════════════════════════
-#  Estructuras de datos internas
-# ════════════════════════════════════════════════════════════════════════════
-
-@dataclass
-class _FixRecord:
-    cx: float
-    cy: float
-    duration_ms: float
-    start_ms: float
-
-
-# ════════════════════════════════════════════════════════════════════════════
-#  HeatmapGenerator
-# ════════════════════════════════════════════════════════════════════════════
 
 class HeatmapGenerator:
     """
-    Genera heatmaps de densidad de fijaciones y dwell time a partir de un CSV.
+    Genera heatmaps de densidad de fijaciones y dwell time.
 
     Args:
         screen_w / screen_h: resolución de la pantalla en píxeles
@@ -92,173 +73,378 @@ class HeatmapGenerator:
         self.sigma    = sigma_px
         self.alpha    = alpha
 
-    # ── API pública ───────────────────────────────────────────────────────
+    # ════════════════════════════════════════════════════════════════════
+    #  API original (a partir de un CSV)
+    # ════════════════════════════════════════════════════════════════════
 
-    def fixation_density(
-        self,
-        csv_path:   str,
-        background: Optional[str] = None,
-        output:     Optional[str] = None,
-        show_markers: bool = False,
-    ) -> str:
-        """
-        Heatmap de densidad de fijaciones.
-
-        Cada punto de fijación contribuye con peso 1.0 al mapa de densidad.
-        Ideal para visualizar **dónde** miró el usuario (frecuencia espacial).
-
-        Returns:
-            Ruta del PNG generado.
-        """
-        rows      = self._load(csv_path)
-        fix_pts   = self._extract_fixations(rows)
-        density   = self._build_density_map(
-            [(f.cx, f.cy) for f in fix_pts],
-            [1.0] * len(fix_pts)
-        )
-        bg        = self._load_bg(background)
-        heatmap   = self._render(density, bg)
-
-        if show_markers and fix_pts:
-            heatmap = self._draw_markers(heatmap, fix_pts)
-
+    def fixation_density(self, csv_path: str,
+                         background: Optional[str] = None,
+                         output: Optional[str] = None,
+                         show_markers: bool = False) -> str:
+        """Heatmap de densidad de fijaciones.  Devuelve la ruta del PNG."""
+        fix = self._extract_fixations(self._load(csv_path))
+        img = self.render_density(fix, (self.sw, self.sh),
+                                  self._load_bg(background),
+                                  weighted=False, markers=show_markers)
         self._draw_legend(
-            heatmap,
-            f"DENSIDAD DE FIJACIONES  ·  {len(fix_pts)} fijaciones",
+            img, f"DENSIDAD DE FIJACIONES  ·  {len(fix)} fijaciones",
             ["Cada fijacion suma 1 punto de calor",
              "Rojo/caliente = miro AHI muchas veces",
              "Azul/frio = apenas paso por esa zona"])
-
         out = output or self._out_path(csv_path, "density")
-        cv2.imwrite(out, heatmap)
+        cv2.imwrite(out, img)
         print(f"[HeatmapGenerator] Densidad de fijaciones -> {out}")
         return out
 
-    def dwell_time(
-        self,
-        csv_path:   str,
-        background: Optional[str] = None,
-        output:     Optional[str] = None,
-        show_markers: bool = False,
-    ) -> str:
-        """
-        Heatmap de dwell time (tiempo de permanencia acumulado).
-
-        Cada fijacion contribuye con peso proporcional a su duracion.
-        Ideal para visualizar cuanto tiempo se miro cada region.
-
-        Returns:
-            Ruta del PNG generado.
-        """
-        rows    = self._load(csv_path)
-        fix_pts = self._extract_fixations(rows)
-        density = self._build_density_map(
-            [(f.cx, f.cy) for f in fix_pts],
-            [f.duration_ms for f in fix_pts]
-        )
-        bg      = self._load_bg(background)
-        heatmap = self._render(density, bg)
-
-        if show_markers and fix_pts:
-            heatmap = self._draw_markers(heatmap, fix_pts,
-                                          scale_by_duration=True)
-
-        total_s = sum(f.duration_ms for f in fix_pts) / 1000.0
+    def dwell_time(self, csv_path: str,
+                   background: Optional[str] = None,
+                   output: Optional[str] = None,
+                   show_markers: bool = False) -> str:
+        """Heatmap de dwell time (tiempo de permanencia acumulado)."""
+        fix = self._extract_fixations(self._load(csv_path))
+        img = self.render_density(fix, (self.sw, self.sh),
+                                  self._load_bg(background),
+                                  weighted=True, markers=show_markers)
+        total_s = sum(f.dur_ms for f in fix) / 1000.0
         self._draw_legend(
-            heatmap,
-            f"DWELL TIME  ·  {len(fix_pts)} fijaciones  ·  {total_s:.1f} s",
+            img, f"DWELL TIME  ·  {len(fix)} fijaciones  ·  {total_s:.1f} s",
             ["Cada fijacion pesa segun cuanto duro",
              "Rojo/caliente = miro AHI durante MAS tiempo",
              "El circulo blanco marca cada fijacion"])
-
         out = output or self._out_path(csv_path, "dwell")
-        cv2.imwrite(out, heatmap)
+        cv2.imwrite(out, img)
         print(f"[HeatmapGenerator] Dwell time -> {out}")
         return out
 
-    def scanpath(
-        self,
-        csv_path:   str,
-        background: Optional[str] = None,
-        output:     Optional[str] = None,
-        max_fixations: int = 30,
-    ) -> str:
-        """
-        Scanpath: secuencia de fijaciones numeradas unidas por flechas.
-
-        Muestra el orden temporal de exploración visual: la fijación 1 es lo
-        PRIMERO que miró, la 2 lo siguiente, y así.
-
-        El tamaño de cada círculo es proporcional a la duración de la
-        fijación (más grande = miró más tiempo ahí).
-
-        Args:
-            max_fixations: cuántas fijaciones dibujar.  Por encima de ~30 el
-                           gráfico se vuelve una maraña ilegible.
-
-        Returns:
-            Ruta del PNG generado.
-        """
-        rows    = self._load(csv_path)
-        fix_pts = self._extract_fixations(rows)[:max_fixations]
-        bg      = self._load_bg(background)
-
-        canvas = bg.copy() if bg is not None else np.ones(
-            (self.sh, self.sw, 3), dtype=np.uint8) * 255
-
-        colors = [
-            (0, 180, 255),
-            (0, 220, 100),
-            (255, 100, 0),
-        ]
-
-        for i, fix in enumerate(fix_pts):
-            cx, cy = int(fix.cx), int(fix.cy)
-            r = max(10, min(40, int(fix.duration_ms / 20)))
-            color = colors[i % len(colors)]
-
-            if i < len(fix_pts) - 1:
-                nx, ny = int(fix_pts[i+1].cx), int(fix_pts[i+1].cy)
-                cv2.arrowedLine(canvas, (cx, cy), (nx, ny),
-                                (180, 180, 180), 2, tipLength=0.15)
-
-            cv2.circle(canvas, (cx, cy), r, color, 2)
-            cv2.circle(canvas, (cx, cy), 4, color, -1)
-
-            cv2.putText(canvas, str(i+1),
-                        (cx + r + 4, cy + 6),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.55,
-                        (50, 50, 50), 2)
-
-        # Marcar explícitamente el primer punto mirado
-        if fix_pts:
-            cx, cy = int(fix_pts[0].cx), int(fix_pts[0].cy)
-            cv2.circle(canvas, (cx, cy), 46, (0, 0, 220), 3)
-
-            txt = "1 = LO PRIMERO QUE MIRO"
-            (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX,
-                                          0.6, 2)
-            # Mantener el texto dentro del lienzo: si la primera fijación cae
-            # en una esquina, la etiqueta se salía de la imagen.
-            tx = int(np.clip(cx - tw // 2, 8, max(8, self.sw - tw - 8)))
-            ty = int(np.clip(cy - 56, th + 10, max(th + 10, self.sh - 10)))
-            cv2.putText(canvas, txt, (tx, ty),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 220), 2)
-
+    def scanpath(self, csv_path: str,
+                 background: Optional[str] = None,
+                 output: Optional[str] = None,
+                 max_fixations: int = 30) -> str:
+        """Scanpath: fijaciones numeradas unidas por flechas."""
+        fix = self._extract_fixations(self._load(csv_path))
+        img = self.render_scanpath(fix[:max_fixations], (self.sw, self.sh),
+                                   self._load_bg(background))
         self._draw_legend(
-            canvas,
-            f"SCANPATH  ·  {len(fix_pts)} fijaciones  ·  "
+            img,
+            f"SCANPATH  ·  {min(len(fix), max_fixations)} fijaciones  ·  "
             f"{os.path.basename(csv_path)}",
             ["El numero indica el ORDEN de la mirada (1 = primero)",
              "El tamano del circulo = cuanto tiempo fijo la vista ahi",
              "Las flechas unen fijaciones consecutivas (sacadas)"])
-
         out = output or self._out_path(csv_path, "scanpath")
-        cv2.imwrite(out, canvas)
+        cv2.imwrite(out, img)
         print(f"[HeatmapGenerator] Scanpath -> {out}")
         return out
 
-    # ── Leyenda ──────────────────────────────────────────────────────────
+    def all_three(self, csv_path: str,
+                  background: Optional[str] = None) -> dict:
+        """Los tres tipos en un solo llamado."""
+        return {
+            "density":  self.fixation_density(csv_path, background,
+                                              show_markers=True),
+            "dwell":    self.dwell_time(csv_path, background,
+                                        show_markers=True),
+            "scanpath": self.scanpath(csv_path, background),
+        }
+
+    # ════════════════════════════════════════════════════════════════════
+    #  Renderizado a partir de fijaciones
+    # ════════════════════════════════════════════════════════════════════
+
+    def render_density(self, fixes: Sequence[Fix], size: Tuple[int, int],
+                       bg: Optional[np.ndarray] = None, weighted: bool = False,
+                       markers: bool = False,
+                       aois: Optional[List[Rect]] = None,
+                       use_page: bool = False, scale: float = 1.0,
+                       sigma: Optional[float] = None) -> np.ndarray:
+        """
+        Imagen de calor de una lista de fijaciones.
+
+        Args:
+            size:     (ancho, alto) del lienzo ya multiplicado por ``scale``.
+            weighted: True = dwell time (peso = duración); False = densidad.
+            use_page: usa las coordenadas de página (px, py) en vez de las de
+                      pantalla; las fijaciones sin ellas se omiten.
+            scale:    factor píxeles-del-mapa / píxeles-de-origen.
+        """
+        pts, _ = self._points(fixes, use_page)
+        weights = ([f.dur_ms for f in fixes if self._has(f, use_page)]
+                   if weighted else [1.0] * len(pts))
+        return self.render_points(pts, weights, size, bg, markers=markers,
+                                  marker_sizes=([f.dur_ms for f in fixes
+                                                 if self._has(f, use_page)]
+                                                if weighted else None),
+                                  aois=aois, scale=scale, sigma=sigma)
+
+    def render_points(self, pts: Sequence[Tuple[float, float]],
+                      weights: Sequence[float], size: Tuple[int, int],
+                      bg: Optional[np.ndarray] = None, markers: bool = False,
+                      marker_sizes: Optional[Sequence[float]] = None,
+                      aois: Optional[List[Rect]] = None, scale: float = 1.0,
+                      sigma: Optional[float] = None) -> np.ndarray:
+        """Heatmap genérico de puntos con peso (lo usa también el grupal)."""
+        w, h = int(size[0]), int(size[1])
+        spts = [(x * scale, y * scale) for x, y in pts]
+        density = self._build_density_map(
+            spts, list(weights), w, h,
+            (sigma if sigma is not None else self.sigma) * scale)
+        img = self._render(density, self._fit_bg(bg, w, h), w, h)
+        if markers and spts:
+            for i, (x, y) in enumerate(spts):
+                r = 10
+                if marker_sizes is not None:
+                    r = max(8, min(35, int(marker_sizes[i] / 25)))
+                cv2.circle(img, (int(x), int(y)), r, (255, 255, 255), 1)
+                cv2.circle(img, (int(x), int(y)), 3, (255, 255, 255), -1)
+        if aois:
+            self.draw_aois(img, aois, scale)
+        return img
+
+    def render_scanpath(self, fixes: Sequence[Fix], size: Tuple[int, int],
+                        bg: Optional[np.ndarray] = None,
+                        aois: Optional[List[Rect]] = None,
+                        use_page: bool = False, scale: float = 1.0
+                        ) -> np.ndarray:
+        """Scanpath numerado.  La fijación 1 se marca como "lo primero"."""
+        w, h = int(size[0]), int(size[1])
+        fixes = [f for f in fixes if self._has(f, use_page)]
+        canvas = self._fit_bg(bg, w, h)
+        canvas = canvas.copy() if canvas is not None else \
+            np.ones((h, w, 3), dtype=np.uint8) * 255
+        if aois:
+            self.draw_aois(canvas, aois, scale)
+
+        colors = [(0, 180, 255), (0, 220, 100), (255, 100, 0)]
+        xy = [((f.px, f.py) if use_page else (f.cx, f.cy)) for f in fixes]
+        xy = [(int(x * scale), int(y * scale)) for x, y in xy]
+
+        for i, fix in enumerate(fixes):
+            cx, cy = xy[i]
+            r = max(10, min(40, int(fix.dur_ms / 20)))
+            color = colors[i % len(colors)]
+            if i < len(fixes) - 1:
+                cv2.arrowedLine(canvas, (cx, cy), xy[i + 1],
+                                (180, 180, 180), 2, tipLength=0.15)
+            cv2.circle(canvas, (cx, cy), r, color, 2)
+            cv2.circle(canvas, (cx, cy), 4, color, -1)
+            label = str(i + 1) + (f" {fix.primary_aoi}" if fix.primary_aoi else "")
+            cv2.putText(canvas, label, (cx + r + 4, cy + 6),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (50, 50, 50), 2)
+
+        if fixes:
+            cx, cy = xy[0]
+            cv2.circle(canvas, (cx, cy), 46, (0, 0, 220), 3)
+            txt = "1 = LO PRIMERO QUE MIRO"
+            (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+            # Mantener el texto dentro del lienzo
+            tx = int(np.clip(cx - tw // 2, 8, max(8, w - tw - 8)))
+            ty = int(np.clip(cy - 56, th + 10, max(th + 10, h - 10)))
+            cv2.putText(canvas, txt, (tx, ty),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 220), 2)
+        return canvas
+
+    # ════════════════════════════════════════════════════════════════════
+    #  Imágenes de una sesión (por tarea) y de un grupo
+    # ════════════════════════════════════════════════════════════════════
+
+    def session_images(self, an: Analysis, out_prefix: str,
+                       backgrounds: Optional[Dict[int, str]] = None,
+                       fallback_bg: Optional[str] = None) -> List[str]:
+        """
+        Genera las imágenes de una sesión analizada.
+
+        Para cada tarea con fijaciones: densidad, dwell y scanpath.  Si la
+        sesión tiene coordenadas de página (hubo puente web y scroll) además
+        genera un mapa de calor sobre la PÁGINA completa.  Al final, un
+        juego con la sesión completa.
+
+        Args:
+            backgrounds: ``{id_tarea: ruta_imagen}`` (captura de pantalla).
+            fallback_bg: fondo para las tareas que no tengan uno propio.
+        Returns:
+            Lista de rutas de PNG generadas.
+        """
+        backgrounds = backgrounds or {}
+        out: List[str] = []
+        tasks = [t for t in an.metrics["tasks"] if t["n_fixations"] > 0]
+        scope: List[Tuple[Optional[Dict], str, List[Fix]]] = []
+        if an.metrics["has_tasks"]:
+            for t in tasks:
+                scope.append((t, f"_tarea{t['task']}",
+                              an.fixes_for_task(t["task"])))
+        scope.append((None, "", list(an.fixes)))     # sesión completa
+
+        for t, suffix, fixes in scope:
+            if not fixes:
+                continue
+            tid = t["task"] if t else None
+            bg_path = backgrounds.get(tid) if tid is not None else None
+            bg = self._load_bg(bg_path or fallback_bg)
+            title = (f"{t['title']}" if t else "SESION COMPLETA")
+            aois = self.screen_aois(an, tid)
+
+            dens = self.render_density(fixes, (self.sw, self.sh), bg,
+                                       weighted=False, markers=True, aois=aois)
+            self._draw_legend(
+                dens, f"DENSIDAD  ·  {title}  ·  {len(fixes)} fijaciones",
+                ["Cada fijacion suma 1 punto de calor",
+                 "Rojo = miro AHI muchas veces",
+                 "Azul = apenas paso por esa zona"])
+            out.append(self._save(dens, f"{out_prefix}{suffix}_density.png"))
+
+            dw = self.render_density(fixes, (self.sw, self.sh), bg,
+                                     weighted=True, markers=True, aois=aois)
+            tot = sum(f.dur_ms for f in fixes) / 1000.0
+            self._draw_legend(
+                dw, f"DWELL TIME  ·  {title}  ·  {tot:.1f} s",
+                ["Cada fijacion pesa segun cuanto duro",
+                 "Rojo = miro AHI durante MAS tiempo",
+                 "El circulo blanco marca cada fijacion"])
+            out.append(self._save(dw, f"{out_prefix}{suffix}_dwell.png"))
+
+            sp = self.render_scanpath(fixes[:30], (self.sw, self.sh), bg,
+                                      aois=aois)
+            self._draw_legend(
+                sp, f"SCANPATH  ·  {title}",
+                ["El numero indica el ORDEN de la mirada (1 = primero)",
+                 "El tamano del circulo = cuanto tiempo fijo la vista ahi",
+                 "Junto al numero va el AOI en el que cayo (si lo hay)"])
+            out.append(self._save(sp, f"{out_prefix}{suffix}_scanpath.png"))
+
+            page_img = self.page_image(an, fixes, tid, weighted=True)
+            if page_img is not None:
+                self._draw_legend(
+                    page_img, f"DWELL SOBRE LA PAGINA  ·  {title}",
+                    ["Coordenadas de la PAGINA (incluye lo que"
+                     " se vio al hacer scroll)"])
+                out.append(self._save(
+                    page_img, f"{out_prefix}{suffix}_pagina.png"))
+        return out
+
+    def page_image(self, an: Analysis, fixes: Sequence[Fix],
+                   task_id: Optional[int], weighted: bool = True
+                   ) -> Optional[np.ndarray]:
+        """
+        Heatmap sobre la página completa (coordenadas px, py).
+
+        Devuelve None si no hay fijaciones con coordenadas de página o si
+        la página cabe en una pantalla sin scroll (el mapa normal ya basta).
+        """
+        pf = [f for f in fixes if f.px is not None and f.py is not None]
+        if not pf:
+            return None
+        pw, ph = self._page_size(an)
+        # sin scroll real no aporta nada sobre el mapa de pantalla
+        if ph <= an.session.screen_h * 1.05 and \
+                max(f.py for f in pf) <= an.session.screen_h:
+            return None
+        s = min(1.0, _MAX_PAGE_W / max(pw, 1), _MAX_PAGE_H / max(ph, 1))
+        size = (max(10, int(pw * s)), max(10, int(ph * s)))
+        bg = None
+        if an.study and task_id:
+            t = an.study.task(task_id)
+            p = an.study.resolve_path(t.page_screenshot) if t else None
+            bg = self._load_raw(p)
+        aois = self.page_aois(an)
+        return self.render_density(pf, size, bg, weighted=weighted,
+                                   markers=False, aois=aois, use_page=True,
+                                   scale=s)
+
+    def render_group(self, per_participant: Sequence[Sequence[Fix]],
+                     size: Tuple[int, int], bg: Optional[np.ndarray] = None,
+                     weighted: bool = True, use_page: bool = False,
+                     scale: float = 1.0, aois: Optional[List[Rect]] = None,
+                     sigma: Optional[float] = None) -> np.ndarray:
+        """
+        Heatmap de VARIOS participantes.
+
+        Cada participante aporta peso total 1 (se normaliza), de modo que
+        quien miró más tiempo no domina el mapa: el resultado responde a
+        "¿dónde mira el participante típico?".
+        """
+        pts: List[Tuple[float, float]] = []
+        wts: List[float] = []
+        for fixes in per_participant:
+            fx = [f for f in fixes if self._has(f, use_page)]
+            if not fx:
+                continue
+            raw = [(f.dur_ms if weighted else 1.0) for f in fx]
+            tot = sum(raw) or 1.0
+            for f, r in zip(fx, raw):
+                pts.append((f.px, f.py) if use_page else (f.cx, f.cy))
+                wts.append(r / tot)
+        return self.render_points(pts, wts, size, bg, markers=False,
+                                  aois=aois, scale=scale, sigma=sigma)
+
+    # ── AOI para dibujar ────────────────────────────────────────────────
+
+    def screen_aois(self, an: Analysis, task_id: Optional[int]) -> List[Rect]:
+        """Rectángulos de pantalla de los AOI "viewport" de una tarea."""
+        if an.study is None:
+            return []
+        lst = (an.study.aois_for_task(task_id) if task_id is not None
+               else an.study.aois)
+        out: List[Rect] = []
+        for a in lst:
+            r = a.screen_rect(an.session.screen_w, an.session.screen_h,
+                              an.study.ref_w, an.study.ref_h)
+            if r:
+                out.append((a.label, *r))
+        return out
+
+    def page_aois(self, an: Analysis) -> List[Rect]:
+        """Rectángulos de página de los AOI (manuales y medidos por selector)."""
+        if an.study is None:
+            return []
+        out: List[Rect] = []
+        for a in an.study.aois:
+            if a.rect is not None and a.space == "page":
+                x, y, w, h = a.rect
+                out.append((a.label, x, y, x + w, y + h))
+            elif a.selector:
+                best = None
+                for _ts, snapshots in an.resolver._layouts.values():  # noqa: SLF001
+                    for m in snapshots:
+                        if a.id in m and m[a.id].get("vis", True) \
+                                and not m[a.id].get("fixed"):
+                            best = m[a.id]                   # la más reciente
+                if best:
+                    out.append((a.label, best["x"], best["y"],
+                                best["x"] + best["w"], best["y"] + best["h"]))
+        return out
+
+    @staticmethod
+    def _page_size(an: Analysis) -> Tuple[float, float]:
+        pw = ph = 0.0
+        for e in an.session.web:
+            if e.get("k") in ("vp", "layout"):
+                pw = max(pw, float(e.get("pw") or 0))
+                ph = max(ph, float(e.get("ph") or 0))
+        if pw <= 0:
+            pw = float(an.session.screen_w)
+        if ph <= 0:
+            ph = float(an.session.screen_h)
+        return pw, ph
+
+    @staticmethod
+    def draw_aois(img: np.ndarray, rects: List[Rect], scale: float = 1.0
+                  ) -> None:
+        """Dibuja el contorno y el nombre de cada AOI."""
+        h, w = img.shape[:2]
+        for label, x0, y0, x1, y1 in rects:
+            p0 = (int(x0 * scale), int(y0 * scale))
+            p1 = (int(x1 * scale), int(y1 * scale))
+            cv2.rectangle(img, p0, p1, _AOI_COLOR, 2)
+            ty = p0[1] - 6 if p0[1] > 20 else p0[1] + 18
+            tx = int(np.clip(p0[0] + 4, 2, max(2, w - 150)))
+            cv2.putText(img, str(label)[:28], (tx, int(np.clip(ty, 12, h - 4))),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 3)
+            cv2.putText(img, str(label)[:28], (tx, int(np.clip(ty, 12, h - 4))),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, _AOI_COLOR, 1)
+
+    # ════════════════════════════════════════════════════════════════════
+    #  Leyenda
+    # ════════════════════════════════════════════════════════════════════
 
     @staticmethod
     def _draw_legend(canvas: np.ndarray, title: str,
@@ -273,114 +459,61 @@ class HeatmapGenerator:
         pad   = 12
         hline = 24
         alto  = pad * 2 + hline * (len(lines) + 1)
-        ancho = 520
+        ancho = 560
         x0, y0 = 14, 14
+        H, W = canvas.shape[:2]
+        ancho = min(ancho, W - 2 * x0)
+        if ancho < 120 or alto > H - y0:
+            return
 
-        # Recuadro blanco con borde
         cv2.rectangle(canvas, (x0, y0), (x0 + ancho, y0 + alto),
                       (255, 255, 255), -1)
         cv2.rectangle(canvas, (x0, y0), (x0 + ancho, y0 + alto),
                       (60, 60, 60), 2)
-
-        cv2.putText(canvas, title[:60], (x0 + pad, y0 + pad + 15),
+        cv2.putText(canvas, title[:64], (x0 + pad, y0 + pad + 15),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.52, (20, 20, 20), 2)
         for k, ln in enumerate(lines):
             cv2.putText(canvas, ln, (x0 + pad, y0 + pad + hline * (k + 1) + 15),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.44, (70, 70, 70), 1)
 
-    def all_three(
-        self,
-        csv_path:   str,
-        background: Optional[str] = None,
-    ) -> dict:
-        """
-        Genera los tres tipos de visualización en un solo llamado.
-
-        Returns:
-            dict con claves "density", "dwell", "scanpath".
-        """
-        return {
-            "density":  self.fixation_density(csv_path, background, show_markers=True),
-            "dwell":    self.dwell_time(csv_path, background, show_markers=True),
-            "scanpath": self.scanpath(csv_path, background),
-        }
-
-    # ── Internos ──────────────────────────────────────────────────────────
+    # ════════════════════════════════════════════════════════════════════
+    #  Internos
+    # ════════════════════════════════════════════════════════════════════
 
     def _load(self, csv_path: str) -> List[dict]:
-        rows = []
-        with open(csv_path, newline="", encoding="utf-8") as f:
-            for row in csv.DictReader(f):
-                try:
-                    rows.append({
-                        "Timestamp_ms": float(row["Timestamp_ms"]),
-                        "Gaze_X":       float(row["Gaze_X"]),
-                        "Gaze_Y":       float(row["Gaze_Y"]),
-                        "Event_Type":   row["Event_Type"],
-                        "Face_Detected": int(row.get("Face_Detected", 1)),
-                    })
-                except (ValueError, KeyError):
-                    continue
-        return rows
+        """Filas del CSV (compatibilidad con la API antigua)."""
+        return read_rows(csv_path)
 
-    def _extract_fixations(self, rows: List[dict]) -> List[_FixRecord]:
-        """
-        Agrupa filas consecutivas de tipo 'Fixation' en registros de fijación.
+    def _extract_fixations(self, rows: List[dict]) -> List[Fix]:
+        """Fijaciones de una lista de filas (compatibilidad)."""
+        return extract_fixations(rows, MIN_FIXATION_MS)
 
-        Sólo se conservan las fijaciones de al menos ``MIN_FIXATION_MS``.  El
-        umbral coincide con el del clasificador I-DT: por debajo de ~150 ms no
-        hay fijación, hay tránsito.  Sin este filtro un barrido ruidoso genera
-        decenas de "fijaciones" de 1-2 muestras que convierten el scanpath en
-        una maraña de líneas.
-        """
-        fixations: List[_FixRecord] = []
-        cur_pts:   List[tuple]       = []
-        cur_start: Optional[float]   = None
+    @staticmethod
+    def _has(f: Fix, use_page: bool) -> bool:
+        return (f.px is not None and f.py is not None) if use_page else True
 
-        for i, r in enumerate(rows):
-            is_fix = (r["Event_Type"] == "Fixation" and r["Face_Detected"])
-            if is_fix:
-                if cur_start is None:
-                    cur_start = r["Timestamp_ms"]
-                cur_pts.append((r["Gaze_X"], r["Gaze_Y"]))
-            else:
-                if cur_pts and cur_start is not None:
-                    dur = r["Timestamp_ms"] - cur_start
-                    if dur >= MIN_FIXATION_MS:
-                        cx = float(np.mean([p[0] for p in cur_pts]))
-                        cy = float(np.mean([p[1] for p in cur_pts]))
-                        fixations.append(_FixRecord(cx, cy, dur, cur_start))
-                cur_pts   = []
-                cur_start = None
+    @staticmethod
+    def _points(fixes: Sequence[Fix], use_page: bool
+                ) -> Tuple[List[Tuple[float, float]], int]:
+        pts = [((f.px, f.py) if use_page else (f.cx, f.cy))
+               for f in fixes if HeatmapGenerator._has(f, use_page)]
+        return pts, len(pts)
 
-        # Cerrar último grupo
-        if cur_pts and cur_start is not None and len(rows) > 0:
-            last_t = rows[-1]["Timestamp_ms"]
-            dur    = last_t - cur_start
-            if dur >= MIN_FIXATION_MS:
-                cx = float(np.mean([p[0] for p in cur_pts]))
-                cy = float(np.mean([p[1] for p in cur_pts]))
-                fixations.append(_FixRecord(cx, cy, dur, cur_start))
-
-        return fixations
-
-    def _build_density_map(
-        self, pts: List[tuple], weights: List[float]
-    ) -> np.ndarray:
+    @staticmethod
+    def _build_density_map(pts: Sequence[Tuple[float, float]],
+                           weights: Sequence[float], w: int, h: int,
+                           sigma: float) -> np.ndarray:
         """Construye y suaviza el mapa de densidad 2D."""
-        density = np.zeros((self.sh, self.sw), dtype=np.float32)
-        for (px, py), w in zip(pts, weights):
-            xi = int(np.clip(px, 0, self.sw - 1))
-            yi = int(np.clip(py, 0, self.sh - 1))
-            density[yi, xi] += float(w)
+        density = np.zeros((h, w), dtype=np.float32)
+        for (px, py), wt in zip(pts, weights):
+            xi = int(np.clip(px, 0, w - 1))
+            yi = int(np.clip(py, 0, h - 1))
+            density[yi, xi] += float(wt)
+        density = gaussian_filter(density, sigma=max(sigma, 1.0))
 
-        # Suavizado Gaussiano
-        density = gaussian_filter(density, sigma=self.sigma)
-
-        # Normalizar a [0, 1] usando un percentil alto en vez del máximo.
-        # Si se normaliza por el máximo, un único punto muy caliente aplasta
-        # toda la escala y el resto del mapa queda uniformemente azul.  Con
-        # el percentil 99 la escala se reparte donde está la información.
+        # Normalizar a [0, 1] con un percentil alto en vez del máximo: si se
+        # normaliza por el máximo, un único punto muy caliente aplasta toda
+        # la escala y el resto del mapa queda uniformemente azul.
         nz = density[density > 0]
         if nz.size:
             ref = float(np.percentile(nz, 99.0))
@@ -389,51 +522,53 @@ class HeatmapGenerator:
             density = np.clip(density / ref, 0.0, 1.0)
         return density
 
-    def _render(
-        self, density: np.ndarray, bg: Optional[np.ndarray]
-    ) -> np.ndarray:
+    def _render(self, density: np.ndarray, bg: Optional[np.ndarray],
+                w: int, h: int) -> np.ndarray:
         """Aplica colormap y blend sobre el fondo."""
-        # Mapa de color (uint8)
         density_u8 = (density * 255).astype(np.uint8)
-        colored    = cv2.applyColorMap(density_u8, self.colormap)
-
+        colored = cv2.applyColorMap(density_u8, self.colormap)
         if bg is None:
-            bg = np.ones((self.sh, self.sw, 3), dtype=np.uint8) * 255
+            bg = np.ones((h, w, 3), dtype=np.uint8) * 255
 
-        # Máscara: no mezclar zonas con densidad baja.  El umbral es alto a
-        # propósito — el desenfoque gaussiano reparte un poco de densidad por
-        # toda la pantalla, y con un umbral bajo el heatmap se convierte en
-        # una mancha que cubre todo y no comunica nada.
+        # Máscara: no mezclar zonas con densidad baja.  El desenfoque
+        # gaussiano reparte un poco de densidad por toda la pantalla, y con
+        # un umbral bajo el heatmap se convierte en una mancha que no
+        # comunica nada.
         mask = (density > 0.20).astype(np.float32)
         mask = np.stack([mask, mask, mask], axis=-1)
 
-        # Alpha blend: solo donde hay datos
         result = bg.copy().astype(np.float32)
-        alpha  = self.alpha * mask
+        alpha = self.alpha * mask
         result = result * (1. - alpha) + colored.astype(np.float32) * alpha
         return result.clip(0, 255).astype(np.uint8)
 
-    def _load_bg(self, path: Optional[str]) -> Optional[np.ndarray]:
+    @staticmethod
+    def _load_raw(path: Optional[str]) -> Optional[np.ndarray]:
         if path and os.path.exists(path):
-            img = cv2.imread(path)
-            if img is not None:
-                return cv2.resize(img, (self.sw, self.sh))
+            return cv2.imread(path)
         return None
 
-    def _draw_markers(
-        self, img: np.ndarray, fixations: List[_FixRecord],
-        scale_by_duration: bool = False
-    ) -> np.ndarray:
-        out = img.copy()
-        for i, f in enumerate(fixations):
-            cx, cy = int(f.cx), int(f.cy)
-            if scale_by_duration:
-                r = max(8, min(35, int(f.duration_ms / 25)))
-            else:
-                r = 10
-            cv2.circle(out, (cx, cy), r, (255, 255, 255), 1)
-            cv2.circle(out, (cx, cy), 3, (255, 255, 255), -1)
-        return out
+    def _load_bg(self, path: Optional[str]) -> Optional[np.ndarray]:
+        img = self._load_raw(path)
+        if img is not None:
+            return cv2.resize(img, (self.sw, self.sh))
+        return None
+
+    @staticmethod
+    def _fit_bg(bg: Optional[np.ndarray], w: int, h: int
+                ) -> Optional[np.ndarray]:
+        if bg is None:
+            return None
+        if bg.shape[1] == w and bg.shape[0] == h:
+            return bg
+        return cv2.resize(bg, (w, h))
+
+    @staticmethod
+    def _save(img: np.ndarray, path: str) -> str:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        cv2.imwrite(path, img)
+        print(f"[HeatmapGenerator] -> {path}")
+        return path
 
     @staticmethod
     def _out_path(csv_path: str, suffix: str) -> str:

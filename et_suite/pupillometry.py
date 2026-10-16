@@ -171,6 +171,83 @@ class PupilTracker:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# BlinkDetector — parpadeos por apertura del ojo (EAR)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class BlinkDetector:
+    """
+    Detecta parpadeos con la *Eye Aspect Ratio* (Soukupová & Čech, 2016):
+
+        EAR = (‖p2−p6‖ + ‖p3−p5‖) / (2·‖p1−p4‖)
+
+    calculada sobre 6 landmarks de cada párpado.  Un ojo abierto da ~0.25–0.35
+    y uno cerrado ~0.05–0.15.
+
+    El umbral es RELATIVO: se compara con la apertura habitual del propio
+    participante (percentil 80 de los últimos ``window_s`` segundos).  Así
+    funciona igual con ojos muy abiertos o rasgados, con lentes, etc.
+
+    Los parpadeos importan por dos razones: se reportan como métrica y, sobre
+    todo, durante un parpadeo la estimación de mirada es basura, de modo que
+    el grabador no debe tratar esas muestras como fijaciones ni sacadas.
+    """
+
+    # Orden: p1 (esquina externa), p2, p3 (párpado superior),
+    #        p4 (esquina interna), p5, p6 (párpado inferior)
+    R_EYE = (33, 160, 158, 133, 153, 144)
+    L_EYE = (362, 385, 387, 263, 373, 380)
+
+    def __init__(self, ratio: float = 0.62, window_s: float = 6.0,
+                 min_baseline: float = 0.12, warmup: int = 8) -> None:
+        self.ratio = ratio
+        self.window_s = window_s
+        self.min_baseline = min_baseline
+        self.warmup = warmup
+        self._hist: List[Tuple[float, float]] = []   # (t_s, ear)
+
+    def reset(self) -> None:
+        self._hist.clear()
+
+    @staticmethod
+    def _eye_ear(lm, idx, w: int, h: int) -> float:
+        pts = [(lm[i].x * w, lm[i].y * h) for i in idx]
+        d = lambda a, b: math.hypot(pts[a][0] - pts[b][0],
+                                    pts[a][1] - pts[b][1])
+        horiz = d(0, 3)
+        if horiz < 1e-6:
+            return 0.0
+        return (d(1, 5) + d(2, 4)) / (2.0 * horiz)
+
+    def ear(self, lm, w: int, h: int) -> float:
+        """EAR promedio de los dos ojos."""
+        return 0.5 * (self._eye_ear(lm, self.R_EYE, w, h) +
+                      self._eye_ear(lm, self.L_EYE, w, h))
+
+    def baseline(self) -> float:
+        """Apertura habitual (percentil 80) en la ventana reciente."""
+        if not self._hist:
+            return 0.0
+        return float(np.percentile([e for _, e in self._hist], 80))
+
+    def update(self, ear: float, t_s: float) -> bool:
+        """
+        Registra una medición de EAR y dice si esta muestra es parpadeo.
+        """
+        # La ventana guarda sólo ojos "abiertos o dudosos": un parpadeo largo
+        # no debe arrastrar la línea base hacia abajo.
+        base = self.baseline()
+        is_blink = (len(self._hist) >= self.warmup
+                    and base >= self.min_baseline
+                    and ear < self.ratio * base)
+        if not is_blink:
+            self._hist.append((t_s, ear))
+        cutoff = t_s - self.window_s
+        while self._hist and self._hist[0][0] < cutoff:
+            self._hist.pop(0)
+        return bool(is_blink)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # I-VT Classifier — Velocity-Threshold Identification
 # ─────────────────────────────────────────────────────────────────────────────
 

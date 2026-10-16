@@ -1,4 +1,4 @@
-﻿# Byte-compiled / optimized / DLL files
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
@@ -45,3 +45,13 @@ Thumbs.db
 *.swo
 .vscode/
 .idea/
+
+# Datos de participantes (privados: no subir al repositorio)
+sessions/*/
+resultados/
+para_enviar/
+*.meta.json
+*.web.json
+
+# Calibraciones guardadas a mano (son de una sola persona)
+calibracion*.json

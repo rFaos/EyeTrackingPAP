@@ -72,17 +72,25 @@
     max-width: 1280px; margin: 0 auto; padding: 0 48px 30px;
     font-size: 13px; color: #8b93a8;
   }
+  .faq { max-width: 1280px; margin: 0 auto; padding: 40px 48px 80px; }
+  .faq h2 { font-size: 30px; letter-spacing: -.5px; margin-bottom: 22px; }
+  .faq details {
+    background: #fff; border: 1px solid #e2e6f0; border-radius: 12px;
+    padding: 22px 26px; margin-bottom: 16px;
+  }
+  .faq summary { font-size: 18px; font-weight: 600; cursor: pointer; }
+  .faq details p { margin-top: 12px; color: #5a6480; font-size: 15px; }
 </style>
 </head>
 <body>
 
-<header>
+<header id="top">
   <div class="logo">PAP<span>·</span>EyeTracking</div>
   <nav>
     <a href="#">Producto</a>
     <a href="#">Precios</a>
     <a href="#">Docs</a>
-    <a href="#" class="cta">Empezar gratis</a>
+    <a href="#" class="cta" id="cta-empezar">Empezar gratis</a>
   </nav>
 </header>
 
@@ -121,7 +129,7 @@
   </div>
 </section>
 
-<section class="stats">
+<section class="stats" id="stats">
   <div class="stat"><b>9</b><span>puntos de calibración</span></div>
   <div class="stat"><b>30</b><span>Hz de muestreo</span></div>
   <div class="stat"><b>3</b><span>tipos de heatmap</span></div>
@@ -129,15 +137,39 @@
 </section>
 
 <p class="hint">
-  Sugerencia para la prueba: mira primero el título de la izquierda, después el
-  bloque morado de la derecha, luego las tres tarjetas y por último el botón
-  azul del menú. Después genera el informe y compara el orden real con el que
-  esperabas.
+  Página de demostración del estudio «demo_pagina_prueba». Sirve para ensayar
+  el flujo completo (3 tareas, scroll, heatmaps e informe) antes de usar el
+  sitio real.
 </p>
+
+<section class="faq" id="faq">
+  <h2>Preguntas frecuentes</h2>
+  <details open id="faq-1">
+    <summary>¿Necesito un equipo especial?</summary>
+    <p>No. Basta una cámara web común y buena iluminación frontal. No se
+       necesita un eye tracker infrarrojo ni hardware adicional.</p>
+  </details>
+  <details open id="faq-2">
+    <summary>¿Se guarda mi video?</summary>
+    <p>No. La cámara se usa solamente para estimar hacia dónde miras; no se
+       graba ni se conserva ninguna imagen de tu cara.</p>
+  </details>
+  <details open id="faq-3">
+    <summary>¿Cuánto tarda la calibración?</summary>
+    <p>Alrededor de 40 segundos con nueve puntos. Debes mantener la cabeza
+       estable y seguir cada punto con la mirada.</p>
+  </details>
+  <details open id="faq-4">
+    <summary>¿Qué precisión tiene?</summary>
+    <p>Con cámara web, el error típico es de 2 a 4 grados de ángulo visual:
+       suficiente para distinguir bloques grandes, no palabras sueltas.</p>
+  </details>
+</section>
 
 <footer>
   Página de prueba · Eye-Tracking Suite — Proyecto PAP
 </footer>
 
+<script src="/web/eyetracking_bridge.user.js"></script>
 </body>
 </html>

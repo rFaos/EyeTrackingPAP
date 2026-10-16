@@ -1,0 +1,9 @@
+Código histórico (versiones 1.x/2.x) que ya NO usa la aplicación.
+Se conserva sólo como referencia; no hace falta para ejecutar el prototipo.
+
+  main.py / main_legacy.py      interfaz antigua
+  gaze_engine*.py, gaze_tracker.py, calibration.py, overlay.py, recorder.py
+                                motor y utilidades antiguos (reemplazados por et_suite/)
+  _t_pose.py, _t_gui.py         scripts de prueba que dependen de lo anterior
+
+Para ejecutarlos habría que copiarlos de nuevo a la carpeta raíz del proyecto.

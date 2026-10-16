@@ -5,7 +5,8 @@ Ejecuta las cinco validaciones que respaldan el funcionamiento del
 eye-tracker.  No necesita que haya nadie delante de la cámara para las
 pruebas 3, 4 y 5; las 1 y 2 sí.
 
-    python validacion.py
+    python validacion.py                 # completo (con cámara)
+    python validacion.py --sin-camara    # sólo lo que no necesita cámara
 
 Salida esperada (resumen):
     [OK] cámara detectada y entregando imagen
@@ -38,119 +39,131 @@ def check(name: str, ok: bool, detail: str = "") -> None:
     print(f"  [{OK if ok else FAIL}] {name}" + (f"  — {detail}" if detail else ""))
 
 
-# ════════════════════════════════════════════════════════════════════════════
-print("=" * 72)
-print(" 1. DETECCIÓN DE CÁMARAS")
-print("=" * 72)
-# ════════════════════════════════════════════════════════════════════════════
-from et_suite.camera import probe_cameras
+import argparse
 
-infos = probe_cameras(max_index=4, width=640, height=480)
-for c in infos:
-    print(f"       {c.label}   (brillo {c.brightness:.0f})")
-check("se encontró al menos una cámara", len(infos) > 0,
-      f"{len(infos)} encontradas")
-if not infos:
-    print("\n  Sin cámara no se puede continuar.")
-    sys.exit(1)
-check("alguna cámara alcanza los FPS mínimos",
-      any(c.measured_fps >= 12 for c in infos),
-      ", ".join(f"{c.measured_fps:.0f} fps" for c in infos))
+_ap = argparse.ArgumentParser(description="Comprobación del sistema")
+_ap.add_argument("--sin-camara", action="store_true",
+                 help="omite las pruebas 1 y 2 (necesitan cámara y una "
+                      "persona delante); ejecuta todo lo demás")
+SIN_CAMARA = _ap.parse_args().sin_camara
 
-# ════════════════════════════════════════════════════════════════════════════
-print()
-print("=" * 72)
-print(" 2. MOTOR DE MIRADA EN VIVO")
-print("=" * 72)
-# ════════════════════════════════════════════════════════════════════════════
-from et_suite.gaze_tracker import GazeTracker, GazeCalibrator, SCREEN_W, SCREEN_H
+from et_suite.gaze_tracker import GazeTracker, GazeCalibrator, SCREEN_W, SCREEN_H  # noqa: E402,F401
 
-cal = GazeCalibrator(n_points=9, method="polynomial")
-tr = GazeTracker(camera_index=None, calibrator=cal)
-tr.start()
-tr.ready.wait(timeout=20)
-time.sleep(4)
-print(f"       {tr.status}")
-
-n = faces = feats = 0
-xs, ys, poses, eyes = [], [], [], []
-t0 = time.perf_counter()
-while time.perf_counter() - t0 < 5:
-    s = tr.get_latest()
-    if s:
-        n += 1
-        faces += int(s.face_detected)
-        if s.face_detected and s.raw_feat:
-            feats += 1
-            xs.append(s.gaze_x_raw); ys.append(s.gaze_y_raw)
-            poses.append((s.head_pitch, s.head_yaw, s.head_roll))
-            eyes.append((s.raw_feat["gx"], s.raw_feat["gy"]))
-    time.sleep(0.02)
-
-fps = n / 5.0
-print(f"       {n} muestras · {faces} con cara · {feats} con features · "
-      f"{fps:.1f} fps")
-check("el motor entrega muestras", n > 10, f"{n} muestras")
-check("los FPS son suficientes para I-DT", fps >= 12, f"{fps:.1f} fps")
-
-if feats:
-    P = np.array(poses)
-    E = np.array(eyes)
-    print(f"       pose  pitch={P[:,0].mean():+7.1f}  yaw={P[:,1].mean():+7.1f}  "
-          f"roll={P[:,2].mean():+7.1f}")
-    print(f"       iris  dx={E[:,0].mean():+.4f}  dy={E[:,1].mean():+.4f}")
-    check("la pose cefálica es fisiológicamente plausible",
-          abs(P[:, 0].mean()) < 45 and abs(P[:, 1].mean()) < 50,
-          "pitch/yaw dentro de rango")
-    RX, RY = np.array(xs), np.array(ys)
-    sat = float(((RX < 3) | (RX > SCREEN_W - 4) |
-                 (RY < 3) | (RY > SCREEN_H - 4)).mean())
-    check("la vista previa no satura en las esquinas", sat < 0.5,
-          f"{100*sat:.1f} % saturado")
+if SIN_CAMARA:
+    print("(se omiten las pruebas 1 y 2: --sin-camara)")
 else:
-    print("       (no hay cara delante de la cámara: se omite esta parte)")
-    check("rostro detectado (opcional)", False,
-          "nadie frente a la cámara durante la prueba")
+    # ════════════════════════════════════════════════════════════════════════════
+    print("=" * 72)
+    print(" 1. DETECCIÓN DE CÁMARAS")
+    print("=" * 72)
+    # ════════════════════════════════════════════════════════════════════════════
+    from et_suite.camera import probe_cameras
 
-# ── 2b · El grabador NO debe perder muestras ─────────────────────────────
-# Regresión del bug más grave encontrado: la GUI y el grabador vaciaban la
-# MISMA cola, así que competían y se perdía ~la mitad de las muestras
-# (7.3 Hz grabados de 15 Hz reales).  Con el histórico no destructivo, el
-# grabador ve la secuencia completa aunque la GUI consulte a 60 Hz.
-if n > 10:
-    _stop_poll = threading.Event()
+    infos = probe_cameras(max_index=4, width=640, height=480)
+    for c in infos:
+        print(f"       {c.label}   (brillo {c.brightness:.0f})")
+    check("se encontró al menos una cámara", len(infos) > 0,
+          f"{len(infos)} encontradas")
+    if not infos:
+        print("\n  Sin cámara no se puede continuar.")
+        sys.exit(1)
+    check("alguna cámara alcanza los FPS mínimos",
+          any(c.measured_fps >= 12 for c in infos),
+          ", ".join(f"{c.measured_fps:.0f} fps" for c in infos))
 
-    def _gui_poll() -> None:
-        while not _stop_poll.is_set():
-            tr.get_latest()
-            time.sleep(1 / 60.0)
+    # ════════════════════════════════════════════════════════════════════════════
+    print()
+    print("=" * 72)
+    print(" 2. MOTOR DE MIRADA EN VIVO")
+    print("=" * 72)
+    # ════════════════════════════════════════════════════════════════════════════
 
-    threading.Thread(target=_gui_poll, daemon=True).start()
-    _log = DataLogger(tr, output_dir="sessions")
-    _log.start(session_name="_validacion")
-    time.sleep(5)
-    _csv_path, _ = _log.stop()
-    _stop_poll.set()
+    cal = GazeCalibrator(n_points=9, method="polynomial")
+    tr = GazeTracker(camera_index=None, calibrator=cal)
+    tr.start()
+    tr.ready.wait(timeout=20)
+    time.sleep(4)
+    print(f"       {tr.status}")
 
-    with open(_csv_path, encoding="utf-8") as _f:
-        _rows = [r for r in csv.DictReader(_f)
-                 if not r["Event_Type"].startswith("EVENT")]
-    _fids = [int(r["Frame_ID"]) for r in _rows]
-    _esperados = (max(_fids) - min(_fids) + 1) if _fids else 0
-    _perdidos = (1.0 - len(_rows) / _esperados) if _esperados else 1.0
+    n = faces = feats = 0
+    xs, ys, poses, eyes = [], [], [], []
+    t0 = time.perf_counter()
+    while time.perf_counter() - t0 < 5:
+        s = tr.get_latest()
+        if s:
+            n += 1
+            faces += int(s.face_detected)
+            if s.face_detected and s.raw_feat:
+                feats += 1
+                xs.append(s.gaze_x_raw); ys.append(s.gaze_y_raw)
+                poses.append((s.head_pitch, s.head_yaw, s.head_roll))
+                eyes.append((s.raw_feat["gx"], s.raw_feat["gy"]))
+        time.sleep(0.02)
 
-    print(f"       grabadas {len(_rows)} de {_esperados} muestras "
-          f"producidas ({100 * _perdidos:.1f} % perdidas) "
-          f"con la GUI consultando a 60 Hz")
-    check("el grabador no pierde muestras", _perdidos < 0.03,
-          f"{100 * _perdidos:.1f} % perdidas")
+    fps = n / 5.0
+    print(f"       {n} muestras · {faces} con cara · {feats} con features · "
+          f"{fps:.1f} fps")
+    check("el motor entrega muestras", n > 10, f"{n} muestras")
+    check("los FPS son suficientes para I-DT", fps >= 12, f"{fps:.1f} fps")
 
-    try:
-        os.remove(_csv_path)
-    except OSError:
-        pass
+    if feats:
+        P = np.array(poses)
+        E = np.array(eyes)
+        print(f"       pose  pitch={P[:,0].mean():+7.1f}  yaw={P[:,1].mean():+7.1f}  "
+              f"roll={P[:,2].mean():+7.1f}")
+        print(f"       iris  dx={E[:,0].mean():+.4f}  dy={E[:,1].mean():+.4f}")
+        check("la pose cefálica es fisiológicamente plausible",
+              abs(P[:, 0].mean()) < 45 and abs(P[:, 1].mean()) < 50,
+              "pitch/yaw dentro de rango")
+        RX, RY = np.array(xs), np.array(ys)
+        sat = float(((RX < 3) | (RX > SCREEN_W - 4) |
+                     (RY < 3) | (RY > SCREEN_H - 4)).mean())
+        check("la vista previa no satura en las esquinas", sat < 0.5,
+              f"{100*sat:.1f} % saturado")
+    else:
+        print("       (no hay cara delante de la cámara: se omite esta parte)")
+        check("rostro detectado (opcional)", False,
+              "nadie frente a la cámara durante la prueba")
 
-tr.stop()
+    # ── 2b · El grabador NO debe perder muestras ─────────────────────────────
+    # Regresión del bug más grave encontrado: la GUI y el grabador vaciaban la
+    # MISMA cola, así que competían y se perdía ~la mitad de las muestras
+    # (7.3 Hz grabados de 15 Hz reales).  Con el histórico no destructivo, el
+    # grabador ve la secuencia completa aunque la GUI consulte a 60 Hz.
+    if n > 10:
+        _stop_poll = threading.Event()
+
+        def _gui_poll() -> None:
+            while not _stop_poll.is_set():
+                tr.get_latest()
+                time.sleep(1 / 60.0)
+
+        threading.Thread(target=_gui_poll, daemon=True).start()
+        _log = DataLogger(tr, output_dir="sessions")
+        _log.start(session_name="_validacion")
+        time.sleep(5)
+        _csv_path, _ = _log.stop()
+        _stop_poll.set()
+
+        with open(_csv_path, encoding="utf-8") as _f:
+            _rows = [r for r in csv.DictReader(_f)
+                     if not r["Event_Type"].startswith("EVENT")]
+        _fids = [int(r["Frame_ID"]) for r in _rows]
+        _esperados = (max(_fids) - min(_fids) + 1) if _fids else 0
+        _perdidos = (1.0 - len(_rows) / _esperados) if _esperados else 1.0
+
+        print(f"       grabadas {len(_rows)} de {_esperados} muestras "
+              f"producidas ({100 * _perdidos:.1f} % perdidas) "
+              f"con la GUI consultando a 60 Hz")
+        check("el grabador no pierde muestras", _perdidos < 0.03,
+              f"{100 * _perdidos:.1f} % perdidas")
+
+        try:
+            os.remove(_csv_path)
+        except OSError:
+            pass
+
+    tr.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
 print()
@@ -186,13 +199,15 @@ check("el error de predicción es < 120 px", np.mean(errs) < 120,
       f"{np.mean(errs):.0f} px")
 check("la calibración se guarda y se recupera",
       c.save("_validacion_cal.json") and
-      GazeCalibrator(n_points=9, method="polynomial").load(
+      GazeCalibrator(screen_w=1920, screen_h=1080, n_points=9,
+                     method="polynomial").load(
           "_validacion_cal.json"))
 # Los parámetros guardados sólo valen para el modelo con el que se
 # ajustaron: cargar un archivo polinómico en un calibrador geométrico debe
 # rechazarse en vez de degradar la app en silencio.
 check("una calibración de OTRO modelo se rechaza",
-      not GazeCalibrator(n_points=9, method="geometric").load(
+      not GazeCalibrator(screen_w=1920, screen_h=1080, n_points=9,
+                         method="geometric").load(
           "_validacion_cal.json"),
       "no se cuela un modelo incompatible")
 os.remove("_validacion_cal.json")
@@ -210,9 +225,9 @@ _default_ui = _m.group(1) if _m else "?"
 check("la interfaz calibra con el modelo geométrico por defecto",
       _default_ui == "geometric",
       f"método por defecto en la GUI: '{_default_ui}'")
-check("el modelo geométrico se puede elegir en la interfaz",
-      '"geometric"' in _src and "Geométrico" in _src,
-      "hay un botón de radio para el modelo geométrico")
+check("la calibración usa el modelo elegido en la interfaz",
+      "calibrator.method = self._var_method.get()" in _src,
+      "_do_calibrate aplica _var_method al calibrador")
 
 # ════════════════════════════════════════════════════════════════════════════
 print()
@@ -419,7 +434,9 @@ print("=" * 72)
 csvs = sorted(glob.glob(os.path.join("sessions", "*.csv")))
 if csvs:
     from et_suite.report import session_report
-    txt = session_report(csvs[0], 1920, 1080)
+    import tempfile
+    txt = session_report(csvs[0], 1920, 1080, study=None, output=os.path.join(
+        tempfile.gettempdir(), "_validacion_informe.txt"))
     check("el informe se genera", len(txt) > 200, os.path.basename(csvs[0]))
     check("incluye el orden de fijación", "QUÉ MIRÓ PRIMERO" in txt)
     check("incluye el mapa de atención", "MAPA DE ATENCIÓN" in txt)

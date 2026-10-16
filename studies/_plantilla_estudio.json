@@ -1,0 +1,75 @@
+{
+  "_LEEME": "Copia este archivo, quítale el guion bajo del nombre (p. ej. udem_usabilidad.json) y edítalo. Los archivos que empiezan con _ no aparecen en la aplicación. Todos los campos que empiezan con _ se ignoran.",
+
+  "id": "udem_usabilidad_2026",
+  "name": "Evaluación de usabilidad · Sitio web UDEM",
+  "version": "1.0",
+  "description": "Tres tareas con estudiantes de la Universidad de Monterrey.",
+  "url": "https://www.udem.edu.mx",
+
+  "consent_version": "1",
+  "_consent_text": "Si omites 'consent_text' se usa un texto estándar (no se guarda video, sólo coordenadas de mirada; participación voluntaria). Si tu comité de ética exige otro texto, escríbelo aquí, con \\n para los saltos de línea.",
+
+  "reference_screen": { "width": 1920, "height": 1080 },
+  "display": { "width_cm": null, "distance_cm": 60 },
+
+  "groups": [],
+
+  "tasks": [
+    {
+      "id": 1,
+      "title": "REEMPLAZAR · nombre corto de la tarea 1",
+      "instruction": "REEMPLAZAR · lo que se le dice al participante, en una o dos frases claras.",
+      "target_aoi": "objetivo_t1",
+      "time_limit_s": 180,
+      "start_url": "https://www.udem.edu.mx"
+    },
+    {
+      "id": 2,
+      "title": "REEMPLAZAR · tarea 2",
+      "instruction": "REEMPLAZAR · instrucción de la tarea 2.",
+      "target_aoi": "objetivo_t2",
+      "time_limit_s": 180,
+      "start_url": "https://www.udem.edu.mx"
+    },
+    {
+      "id": 3,
+      "title": "REEMPLAZAR · tarea 3",
+      "instruction": "REEMPLAZAR · instrucción de la tarea 3.",
+      "target_aoi": "objetivo_t3",
+      "time_limit_s": 180,
+      "start_url": "https://www.udem.edu.mx"
+    }
+  ],
+
+  "aois": [
+    { "id": "menu_principal", "label": "Menú principal", "selector": "nav" },
+    { "id": "buscador",       "label": "Buscador",       "selector": "form[role=search]" },
+    { "id": "objetivo_t1",    "label": "Objetivo tarea 1", "selector": "REEMPLAZAR", "tasks": [1] },
+    { "id": "objetivo_t2",    "label": "Objetivo tarea 2", "selector": "REEMPLAZAR", "tasks": [2] },
+    { "id": "objetivo_t3",    "label": "Objetivo tarea 3", "selector": "REEMPLAZAR", "tasks": [3] },
+
+    { "_ejemplo_rect_manual": "Un AOI sin selector, por rectángulo en pantalla (x, y, ancho, alto a 1920x1080). Sólo sirve si la página no cambia de posición ni tiene scroll.",
+      "id": "ejemplo_rect", "label": "Ejemplo rectángulo", "rect": [0, 0, 1920, 120], "space": "viewport", "tasks": [1] }
+  ],
+
+  "quality": {
+    "min_face_pct": 80,
+    "min_sample_hz": 8,
+    "warn_sample_hz": 12,
+    "max_cal_rms_px": 300,
+    "max_validation_px": 350,
+    "min_duration_s": 20,
+    "min_tasks_done": 1
+  },
+
+  "analysis": { "aoi_margin_px": 0, "min_fixation_ms": 150, "heatmap_sigma_px": 55 },
+
+  "show_gaze_overlay": false,
+  "task_panel": { "position": "bottom" },
+  "capture_screenshots": true,
+  "final_validation": true,
+  "_review_at_end": "true = al terminar, el facilitador marca si cada tarea fue correcta (prueba presencial). false = se revisa después en Resultados → Revisar tareas.",
+  "review_at_end": false,
+  "bridge": { "port": 4243, "hosts": ["www.udem.edu.mx", "udem.edu.mx"] }
+}

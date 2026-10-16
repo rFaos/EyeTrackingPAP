@@ -2,31 +2,45 @@
 # Eye-Tracking Suite v3.0  —  Dependencias
 # ============================================================
 #
-# Instalación:
-#   C:\Python313\python.exe -m pip install -r requirements.txt
+# Instalación (Windows y macOS):
+#   python -m pip install -r requirements.txt
+#   (en macOS suele ser  python3 -m pip install -r requirements.txt)
 #
-# Nota: este proyecto NO usa redes neuronales para estimar la mirada.
-# La invariancia a la cabeza se consigue con geometría 3D (solvePnP +
-# reconstrucción del globo ocular), así que no hace falta descargar
-# ningún modelo ni tener internet después de instalar.
+# Se recomienda un entorno virtual:
+#   python3 -m venv .venv && source .venv/bin/activate        (macOS/Linux)
+#   py -3 -m venv .venv && .venv\Scripts\activate             (Windows)
+#
+# Este proyecto NO usa redes neuronales para estimar la mirada: la
+# invariancia a la cabeza se consigue con geometría 3D (solvePnP +
+# reconstrucción del globo ocular).  El modelo de caras de MediaPipe
+# (face_landmarker.task) ya viene incluido: no hace falta internet después
+# de instalar.
 
 # ── Visión computacional ─────────────────────────────────────
 opencv-python>=4.8.0
 mediapipe>=1.0.0          # Face Landmarker: 478 puntos faciales
 
-# ── Cálculo numérico y señal ─────────────────────────────────
+# ── Cálculo numérico y señal ─────────────────────────────
 numpy>=1.24.0
 scipy>=1.10.0             # gaussian_filter para los heatmaps
 
-# ── Resolución de pantalla ───────────────────────────────────
-screeninfo>=0.8.1
+# ── Pantalla y capturas ──────────────────────────────────────
+screeninfo>=0.8.1         # resolución y tamaño físico del monitor
+Pillow>=10.0.0            # captura de pantalla en Windows (ImageGrab)
 
-# tkinter viene con Python. OJO: la instalación de Python que uses
-# tiene que incluir Tcl/Tk. En esta máquina funciona
-# C:\Python313\python.exe; el `python` del PATH no lo trae.
+# ── Navegador integrado (reemplaza a Chrome + Tampermonkey) ──
+# Usa el motor web que ya trae el sistema: Edge WebView2 en Windows,
+# WebKit en macOS.  No descarga ningún navegador.
+pywebview>=5.0
+
+# tkinter viene con Python, pero la instalación de Python tiene que incluir
+# Tcl/Tk:
+#   • Windows: en el instalador de python.org deja marcado "tcl/tk and IDLE".
+#   • macOS  : usa el instalador de python.org (incluye Tk).  Con Homebrew:
+#              brew install python-tk
 #
-# La transparencia del overlay usa ctypes (librería estándar), así que
-# NO hace falta pywin32.
+# La transparencia del overlay opcional usa ctypes (librería estándar),
+# así que NO hace falta pywin32.
 
 # ── Opcionales: análisis posterior de los CSV ────────────────
 # pandas>=2.0.0

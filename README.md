@@ -1,24 +1,550 @@
 # 👁️ Eye-Tracking Suite v3.0
 
-Sistema de eye-tracking por webcam para analizar **qué mira una persona y en
-qué orden** al ver una página. Funciona con cualquier cámara, sin hardware
-especial.
+Sistema de seguimiento ocular **con webcam** (sin hardware especial) para
+evaluar la usabilidad de un sitio web con participantes: cada persona hace unas
+tareas guiadas mientras el sistema estima **qué mira, en qué orden y cuánto
+tiempo**, y al final entrega métricas por tarea y por elemento de la página,
+informes, mapas de calor y un análisis de todo el grupo.
 
-**Novedad v3.0 — mirada invariante a la cabeza.** Antes, mover la cabeza
-aunque fuera un poco rompía la estimación. Ahora el modelo es geométrico 3D:
-medido sobre el simulador cabeza-ojo-pantalla, girar la cabeza ±16° desviaba
-la mirada **754 px**; ahora **51 px**. Y el error es el mismo con la cabeza
-quieta o moviéndose, que es justo lo que se busca.
+Funciona en **Windows** y **macOS** (y en Linux con Tk).
+
+> **Diseñado para** el *Proyecto Iris: Optimización UX/UI y análisis
+> biométrico aplicado a plataformas digitales* (estudiantes UDEM, 3 tareas en
+> el sitio **Ventana Amarilla = Portal UDEM, `https://portal.udem.edu/`**).
+> Cada participante hace la prueba **en su propia computadora**, entra al
+> portal **con su propia cuenta** y sube un `.zip` a una carpeta de Google
+> Drive. Todo lo que cambia entre un estudio y otro vive en un archivo JSON
+> dentro de [`studies/`](studies/); el código no se toca.
+>
+> **Sin Chrome ni Tampermonkey.** El sitio se abre en un **navegador
+> integrado** en el prototipo, que hace lo mismo que el antiguo script de
+> Tampermonkey (scroll, posición de cada AOI, clics y navegación) sin que el
+> participante instale nada. Ver [Navegador integrado](#-navegador-integrado-sin-tampermonkey).
+
+**Índice:** [Qué hace](#-qué-hace) · [Instalación](#-instalación) ·
+[Arranque](#-arranque) · [Protocolo de la prueba](#-protocolo-de-la-prueba-paso-a-paso) ·
+[Definir el estudio](#-definir-el-estudio-studiesjson) ·
+[Navegador integrado](#-navegador-integrado-sin-tampermonkey) ·
+[Métricas](#-métricas-qué-significa-cada-una) · [Archivos de salida](#-archivos-de-salida) ·
+[Privacidad](#-privacidad-y-ética) · [Precisión y límites](#-precisión-y-límites-importante) ·
+[Pruebas](#-pruebas-automáticas) · [Arquitectura](#-arquitectura) ·
+[Problemas frecuentes](#-si-algo-falla) · [Cómo funciona la mirada](#-cómo-funciona-la-mirada-técnico)
 
 ---
 
-## 🧠 Cómo funciona la mirada (v3.0)
+## ✅ Qué hace
 
-El problema de fondo: medir el iris **en píxeles de la imagen** mezcla dos
-cosas distintas — hacia dónde mira el ojo y hacia dónde apunta la cabeza. Por
-eso la calibración sólo valía mientras no te movieras.
+| Necesidad del estudio | Cómo lo resuelve |
+| :--- | :--- |
+| **3 tareas guiadas** | Panel pequeño con la instrucción, «Comenzar», «Terminé» y «No pude». Tiempo límite opcional por tarea. |
+| **Métricas por elemento** (¿lo vio?, ¿cuándo?, ¿cuánto?) | Áreas de interés (AOI) definidas con un **selector CSS**: el navegador mide el elemento real, **aunque haya scroll** o cambie el tamaño de la ventana. También hay AOI por rectángulo. |
+| **Proceso de la tarea** | TTFF al objetivo, dwell, fijaciones, visitas/revisitas, orden de descubrimiento, secuencia de AOI, recorrido de la mirada, clics, páginas visitadas, tiempo en tarea y éxito. |
+| **Éxito verificado** | El participante dice si terminó; el **facilitador confirma** si fue correcto (la métrica de éxito usa el veredicto del facilitador). |
+| **Calidad por participante** | Calibración **con cada persona**, verificación de precisión al inicio y **al final**, y reglas de exclusión automáticas (cara detectada, frecuencia, error de calibración/validación, duración, consentimiento). |
+| **Grupo completo** | CSV para Excel/SPSS/R (por sesión, tarea y AOI), resúmenes con media/DE/mediana, comparación entre grupos y **mapas de calor grupales** (cada participante pesa igual). |
+| **Heatmaps** | Densidad, dwell, scanpath por tarea, sobre una **captura automática** de la pantalla y sobre la **página completa** cuando hubo scroll. |
+| **Ética** | Consentimiento en pantalla, códigos P01/P02 (sin nombres), no se guarda video. |
+| **Precisión honesta** | Error de calibración y verificación en **px y en grados** de ángulo visual; avisa si un AOI es menor que el error. |
 
-La solución es pasar todo a **geometría 3D**:
+---
+
+## 📋 Instalación
+
+**Requisitos:** Python 3.10 o superior ([python.org](https://www.python.org/downloads/);
+en Windows deja marcado *«Add python.exe to PATH»*), una webcam e internet.
+**No hace falta Chrome ni ninguna extensión.**
+
+| Sistema | Cómo abrirlo |
+| :--- | :--- |
+| **Windows** | Doble clic en `run.bat`. Si aparece *«Windows protegió su PC»*: **Más información → Ejecutar de todas formas**. |
+| **macOS** | Doble clic en `Iniciar_Mac.command` (si macOS no lo deja: clic derecho → Abrir). O en la Terminal, dentro de la carpeta: `bash run.sh` |
+
+**La primera vez** el lanzador crea solo un entorno `.venv` e instala las
+dependencias (≈ 3–5 min, necesita internet); las siguientes veces abre
+directo. Si no encuentra un Python adecuado, explica qué instalar.
+
+**Permisos (una sola vez)** — están explicados también en la pestaña **Guía**
+de la app:
+
+* **Cámara:** en macOS, *Ajustes del Sistema → Privacidad y seguridad →
+  Cámara → Terminal*; en Windows, *Configuración → Privacidad y seguridad →
+  Cámara → permitir a las aplicaciones de escritorio*. Si el antivirus avisa
+  que «python» quiere usar la cámara, hay que permitirlo.
+* **Grabación de pantalla (macOS): no se necesita** en este estudio
+  (`"capture_screenshots": false`).
+* **Firewall:** no pide permiso; el servidor local sólo escucha en
+  `127.0.0.1` (no acepta conexiones de otros equipos).
+* **Navegador:** ninguno. En Windows el navegador integrado usa *Microsoft
+  Edge WebView2*, que ya viene con Windows 11 (en Windows 10 casi siempre
+  también); en macOS usa el motor de Safari.
+
+También se puede lanzar a mano:
+
+```bash
+python main_app.py                         # cámara automática
+python main_app.py --camera 1              # forzar cámara 1
+python main_app.py --estudios studies/ejemplos   # practicar con la página demo
+python main_app.py --ensayo                # grabar sin calibrar (sólo equipo)
+```
+
+---
+
+## 🚀 Arranque
+
+La ventana tiene cuatro pestañas:
+
+| Pestaña | Para qué sirve |
+| :--- | :--- |
+| **Guía** | Los pasos de la prueba, los permisos (cámara, antivirus), cómo abrir el sitio e iniciar sesión, y cómo enviar los datos. Se adapta a Windows o macOS. |
+| **1 · Preparación** | Ver el estudio (si hay varios, elegirlo), escribir el **código asignado** al participante y **calibrar + verificar**. Si la cámara no aparece, *▸ ¿No se detecta la cámara?* permite buscarla y elegirla. |
+| **2 · Sesión** | Lista de comprobaciones («semáforo»), **🌐 Abrir el sitio e iniciar sesión** (navegador integrado), iniciar/terminar la sesión y **📦 Preparar archivo para enviar** (un `.zip` para Google Drive). El enlace *❔ Ver la guía* lleva a la pestaña Guía. |
+| **3 · Resultados** | Para el equipo: informe y heatmaps de una sesión, **revisar si cada tarea fue correcta** y **análisis grupal**. |
+
+Arriba hay tres indicadores de color (verde = bien, amarillo = revisar,
+rojo = problema): **cámara**, **cara detectada** y **navegador** (si el
+navegador integrado está enviando datos). Si una pestaña no cabe en la
+pantalla aparece una barra de desplazamiento.
+
+---
+
+## 🧪 Protocolo de la prueba (paso a paso)
+
+**Antes de la jornada (una vez):**
+
+1. Termina [`studies/ventana_amarilla.json`](studies/ventana_amarilla.json):
+   confirma las 3 tareas y cambia los selectores `#REEMPLAZAR-…` de los AOI
+   ([ver abajo](#-estudio-ventana-amarilla)). Mientras falte algo, la pestaña
+   **Sesión** lo muestra en amarillo.
+2. Practica con la página demo (`python main_app.py --estudios
+   studies/ejemplos`) y después haz un **piloto completo con el sitio real en
+   Windows y en macOS**: revisa en el informe que los AOI se detectan.
+3. Crea la carpeta de Google Drive (que los participantes sólo puedan
+   **subir**, p. ej. un formulario de carga o una carpeta compartida sólo
+   con el equipo) y la lista de códigos P01, P02… (uno por participante).
+4. Envía a cada participante: el proyecto en `.zip`, su código, el enlace de
+   Drive y una indicación: *«abre el prototipo y sigue la pestaña Guía»*.
+5. El navegador integrado se abre maximizado y sin zoom: no hay que
+   pedirle nada al participante.
+
+**Lo que hace cada participante (≈ 15–20 min, también está en la pestaña Guía):**
+
+1. Siéntalo a ~60 cm de la pantalla, cámara a la altura de los ojos, cara bien
+   iluminada **de frente** (nada de ventanas detrás). Sin gorras ni flequillo
+   sobre los ojos. Anota si usa lentes (casilla *Usa lentes*).
+2. Pestaña **Sesión → 🌐 Abrir el sitio e iniciar sesión**. Se abre el
+   portal en una ventana del prototipo; el participante **inicia sesión con
+   su cuenta UDEM**. En la página de login no se registra nada. Cuando cargue
+   el portal, arriba dice *✓ Navegador conectado* (en verde).
+3. En **Preparación**: escribe el **código asignado** a ese participante
+   (P01, P02… según tu lista; la app no propone ninguno para que no se repitan
+   entre computadoras) y, si el estudio tiene grupos, elige el grupo. **No
+   escribas nombres.**
+4. Pulsa **🎯 Calibrar y verificar**. Explica: *«Mira cada punto que aparezca,
+   sin mover la cabeza»*. Al terminar se hace sola una **verificación** con
+   otros 5 puntos y se muestra el error en px y grados.
+   * Error de verificación **< 250 px**: bien. **> 350 px**: repite
+     (mejora la luz, ajusta la cámara/distancia).
+5. En **Sesión**: todo en verde → **▶ Iniciar sesión**.
+6. El participante lee y **acepta el consentimiento**. La ventana del
+   facilitador se minimiza y aparece el **panel de tareas**.
+7. Para cada tarea el participante lee la instrucción y pulsa **Comenzar**
+   (se abre el sitio de la tarea), la realiza y pulsa **Terminé** o **No pude**.
+   El tiempo y la mirada se miden desde que pulsa «Comenzar».
+8. Al terminar la tarea 3 aparece la **verificación final de precisión**
+   (5 puntos, ~15 s).
+9. La app guarda todo, genera el informe y los heatmaps y dice si los datos
+   tienen buena calidad. Con **📦 Preparar archivo para enviar** se crea
+   `para_enviar/<código>_<estudio>_<fecha>.zip` y se abre su carpeta; el
+   participante lo **sube a la carpeta de Google Drive**.
+10. **Después**, el equipo revisa si cada tarea fue correcta: pestaña
+    *Resultados* → elegir la sesión → **✏ Revisar tareas**. Si prefieres
+    hacerlo justo al terminar cada sesión (prueba presencial), pon
+    `"review_at_end": true` en el estudio.
+
+**Al recibir los datos:** descarga los `.zip` de Drive y descomprímelos
+**dentro de `sessions/`** de la computadora del equipo (cada zip ya trae la
+carpeta `<id_del_estudio>/`). Luego, pestaña **Resultados → ↻ → 👥 Análisis
+grupal**.
+
+> **Emergencia:** `Ctrl+Mayús+Q` sobre el panel de tareas (o el botón
+> *Terminar sesión*) interrumpe la sesión; lo grabado hasta ese momento se
+> conserva y queda marcado como interrumpido. Cerrar la ventana también guarda
+> lo grabado.
+
+> **Modo ensayo (sólo para el equipo):** `python main_app.py --ensayo`
+> permite grabar sin calibrar para practicar. Esas sesiones quedan marcadas
+> como ensayo y **no entran** en el análisis grupal.
+
+---
+
+## 🧩 Definir el estudio (`studies/*.json`)
+
+Cada archivo `.json` de [`studies/`](studies/) es un estudio y aparece en el
+selector de la pestaña 1 (pulsa **↻** tras editarlo). Los archivos que
+empiezan con `_` son plantillas y se ignoran. Si un archivo tiene errores, la
+app **lista todos los problemas** de una vez.
+
+Para que el participante **sólo vea el estudio real**, en `studies/` está
+únicamente [`ventana_amarilla.json`](studies/ventana_amarilla.json) (más la
+plantilla). Los ejemplos viven en [`studies/ejemplos/`](studies/ejemplos/)
+(la app no los lee salvo con `--estudios studies/ejemplos`):
+[`demo_pagina_prueba.json`](studies/ejemplos/demo_pagina_prueba.json)
+(3 tareas sobre la página de prueba) y
+[`udem_portal.json`](studies/ejemplos/udem_portal.json) (el portal **viejo**,
+`portalc.udem.edu`; ya no se usa). [`_plantilla_estudio.json`](studies/_plantilla_estudio.json) sirve
+para otro sitio.
+
+### 🟨 Estudio Ventana Amarilla
+
+[`studies/ventana_amarilla.json`](studies/ventana_amarilla.json) es el estudio
+real: *«Proyecto Iris: Optimización UX/UI y análisis biométrico aplicado a
+plataformas digitales.»*, con 3 tareas sobre el **Portal UDEM nuevo**
+(`https://portal.udem.edu/`). Ya está configurado el sitio; falta:
+
+1. **Sitio (listo):** `url`, `start_url` y `bridge.hosts` apuntan a
+   `portal.udem.edu`. Cada estudiante inicia sesión en `login.udem.edu`, donde
+   **no se inyecta nada**. Si después de iniciar sesión el portal lleva a
+   **otro dominio** (p. ej. un sistema de registro aparte), al terminar la
+   sesión la app lo avisa en una *nota para el equipo*: agrégalo a
+   `bridge.hosts` para registrar también ahí.
+2. **Tareas (borrador):** registro de materias, puntaje TOEFL y alta/baja,
+   tomadas del estudio del portal anterior. Confírmalas con el equipo.
+3. **AOI (ROI):** no hace falta el HTML del sitio; el navegador integrado lee
+   la página en vivo. Entra al portal con una cuenta en Chrome y, para cada
+   elemento: clic derecho → *Inspeccionar* → clic derecho en
+   el código resaltado → *Copy → Copy selector*, y pégalo en lugar de
+   `#REEMPLAZAR-…`. Hay un AOI objetivo por tarea (`obj_t1…3`) y uno opcional
+   para la opción de menú que lleva a él (`menu_t1…3`). Si un id cambia en
+   cada visita, usa un selector más general (clase o atributo) o un `rect`.
+   Lo que esté dentro de un *iframe* no se puede medir por selector.
+4. **Consentimiento:** `consent_text` ya está redactado a partir de la carta
+   impresa (equipo, profesor, objetivo, protocolo remoto, datos, retiro y
+   riesgos). Versión `IRIS-3`: añade que entran con su cuenta UDEM, que en el
+   login no se registra nada y que los trámites son simulados. Es un complemento virtual de la carta firmada; si cambias el
+   texto, sube `consent_version` (queda registrada en cada sesión).
+
+Ya viene configurado para pruebas remotas: sin capturas de pantalla (no pide
+el permiso de *Grabación de pantalla*), sin revisión al final (el equipo
+evalúa después con **✏ Revisar tareas**) y con verificación final de
+precisión.
+
+```jsonc
+{
+  "id": "udem_usabilidad_2026",          // identificador (letras, números, - _)
+  "name": "Evaluación de usabilidad · Sitio UDEM",
+  "url": "https://www.udem.edu.mx",      // el script del navegador sólo se activa en este dominio
+  "groups": ["A", "B"],                  // opcional: condiciones a comparar
+
+  "tasks": [
+    { "id": 1, "title": "Buscar becas",
+      "instruction": "Encuentra la información sobre becas y haz clic en ella.",
+      "target_aoi": "becas",             // el AOI que debería encontrar
+      "time_limit_s": 180,               // opcional
+      "start_url": "https://www.udem.edu.mx" }   // opcional: se abre al pulsar «Comenzar»
+  ],
+
+  "aois": [
+    { "id": "becas", "label": "Enlace Becas", "selector": "a[href*='becas']", "tasks": [1] },
+    { "id": "menu",  "label": "Menú principal", "selector": "nav" },
+    { "id": "franja", "label": "Franja superior", "rect": [0, 0, 1920, 120] }   // rectángulo manual
+  ],
+
+  "quality": { "max_cal_rms_px": 300, "max_validation_px": 350, "min_face_pct": 80 }
+}
+```
+
+**Cómo se define un AOI** (una de dos formas):
+
+| Forma | Cuándo usarla |
+| :--- | :--- |
+| `"selector": "nav"` | **Recomendada.** Selector CSS. El navegador mide el elemento real (con scroll, cambios de tamaño, menús desplegables…). Requiere el [script del navegador](#-script-del-navegador-tampermonkey). Para encontrar el selector: clic derecho sobre el elemento → *Inspeccionar* → clic derecho en el nodo → *Copiar → Copiar selector*. |
+| `"rect": [x, y, ancho, alto]` | Rectángulo manual. Con `"space": "viewport"` (por defecto) son píxeles de pantalla a 1920×1080 (se escalan solos) y sólo sirve si la página **no se desplaza**. Con `"space": "page"` son píxeles CSS de la página completa (necesita el script). |
+
+* `"tasks": [1, 3]` limita un AOI a esas tareas (sin esto vale para todas).
+* `"url_contains"` limita un AOI a las URL que contengan ese texto (útil en sitios con varias páginas).
+* Un AOI más pequeño que **2× el error de precisión** se marca en el informe con
+  ⚠ — con webcam no se pueden distinguir elementos más pequeños que eso.
+
+Otras opciones útiles: `reference_screen`, `display.width_cm` /
+`display.distance_cm` (para convertir px a grados), `consent_text`,
+`task_panel.position` (`bottom` · `top` · `bottom-right`),
+`capture_screenshots`, `final_validation`, `review_at_end` (ventana para que
+el facilitador marque si cada tarea fue correcta al terminar; por defecto
+`false`), `show_gaze_overlay` (sólo Windows;
+**desactivado**: ver la propia mirada la modifica), `analysis.min_fixation_ms`
+y `analysis.heatmap_sigma_px`.
+
+---
+
+## 🌐 Navegador integrado (sin Tampermonkey)
+
+Sin datos del navegador, la app sólo sabe *dónde en la pantalla* mira el
+participante. Con ellos sabe *qué elemento de la página* es, aunque haya
+scroll. Antes eso exigía instalar Tampermonkey y pegar un script; ahora lo
+hace el propio prototipo:
+
+1. **🌐 Abrir el sitio e iniciar sesión** abre el sitio del estudio en una
+   ventana propia del prototipo (Edge WebView2 en Windows, Safari/WebKit en
+   macOS). Cada «Comenzar» de una tarea lleva esa misma ventana a su
+   `start_url`, con la sesión ya iniciada.
+2. En cada página **de los dominios del estudio** (`url` + `bridge.hosts`) se
+   inyecta el mismo [`web/eyetracking_bridge.user.js`](web/eyetracking_bridge.user.js)
+   de siempre: lee el scroll, el tamaño de la ventana, la posición de los
+   AOI, los clics (sólo etiqueta, id, clase y los primeros 60 caracteres del
+   texto) y la navegación. Las peticiones al puente local (`127.0.0.1:4243`)
+   las hace el prototipo, no la página, así que el navegador no bloquea ni
+   pregunta nada.
+3. En **cualquier otro dominio** —incluida la página de inicio de sesión—
+   **no se inyecta nada**: la contraseña nunca pasa cerca del prototipo.
+4. La posición exacta del área de contenido en la pantalla se mide con el
+   ratón, como hace Firefox (`mozInnerScreenX/Y`): la mirada se sitúa en la
+   página sin estimar el alto de la barra de título.
+5. Los enlaces que abrirían otra pestaña se abren **en la misma ventana**,
+   para no perder el registro.
+6. Es **privado**: no comparte cookies ni contraseñas con el navegador
+   personal, y al terminar la sesión **la ventana se cierra y la sesión del
+   portal se borra** de la computadora.
+
+Para tus **propias páginas HTML**, basta con incluir
+`<script src="http://127.0.0.1:4243/web/eyetracking_bridge.user.js"></script>`
+(como hace `pagina_prueba.html`).
+
+> **Plan B:** si en alguna computadora el navegador integrado no abriera
+> (Windows sin WebView2), la app lo dice y abre el navegador normal. Ahí sólo
+> se registra la mirada en la pantalla. Solución: instalar *Microsoft Edge
+> WebView2 Runtime* (gratis, de Microsoft).
+
+---
+
+## 📐 Métricas: qué significa cada una
+
+Todos los tiempos «hasta» se miden **desde que el participante pulsa «Comenzar»**
+en la tarea.
+
+| Métrica | Significado |
+| :--- | :--- |
+| **Resultado / éxito** | Lo que dijo el participante (*completada*, *abandonada*, *tiempo agotado*) y, si existe, el **veredicto del facilitador** (correcta / incorrecta). El éxito usa el veredicto del facilitador. |
+| **Tiempo en tarea** | Desde «Comenzar» hasta «Terminé / No pude / tiempo agotado». |
+| **TTFF** (time to first fixation) | Tiempo hasta la **primera fijación dentro de un AOI**. `TTFF objetivo` = del AOI que la tarea pide encontrar. Menor = más fácil de encontrar. |
+| **¿Visto?** | Si el AOI recibió al menos una fijación. Un objetivo **no visto** es el síntoma típico de un elemento invisible para el usuario. |
+| **Dwell** | Suma de la duración de las fijaciones dentro del AOI (ms). Alto = atrajo atención o costó entenderlo. |
+| **Fijaciones / %tiempo** | Nº de fijaciones en el AOI y su porcentaje del tiempo total de fijación de la tarea. |
+| **Visitas / revisitas** | Veces que la mirada **entró** al AOI; revisitas = visitas − 1. Muchas revisitas = confusión o comparación. |
+| **Orden de descubrimiento** | Posición del AOI entre los primeros que se miraron. |
+| **Secuencia de AOI / transiciones** | Recorrido (p. ej. `menú → título → buscador`) y número de cambios de AOI. Más transiciones = búsqueda menos eficiente. |
+| **Recorrido (scanpath, px)** | Longitud total de la trayectoria de la mirada. Más largo = búsqueda más dispersa. |
+| **Clics / páginas** | Clics y páginas distintas visitadas durante la tarea (necesita el script). |
+| **Parpadeos** | Detectados por apertura del ojo (EAR); se excluyen de las fijaciones. |
+| **Fijación** | Mirada quieta ≥ 150 ms (clasificador **I-DT**, el adecuado para el ruido de una webcam). |
+
+El **panel de tareas** nunca cuenta como «mirar el sitio»: las fijaciones sobre
+él se apartan.
+
+> **Sobre la pupila.** El CSV contiene `Pupil_Size`, que es el **radio del iris
+> en píxeles de cámara**, no el diámetro de la pupila. Con una webcam
+> normal la pupila no se puede medir de forma fiable, así que **no se reporta
+> como métrica** ni se debe usar para inferir carga cognitiva.
+
+---
+
+## 📦 Archivos de salida
+
+Cada sesión crea, en `sessions/<id_del_estudio>/`:
+
+```
+P01_20261003_101500.csv            mirada muestra a muestra (ver columnas abajo)
+P01_20261003_101500.meta.json      participante, consentimiento, equipo, calibración,
+                                   verificaciones, tareas, calidad
+P01_20261003_101500.web.json       eventos del navegador (scroll, AOI, clics, páginas)
+P01_20261003_101500_shots/         captura de pantalla al inicio de cada tarea
+P01_20261003_101500_informe.txt    informe de la sesión
+P01_20261003_101500_tarea1_density.png  _dwell.png  _scanpath.png  _pagina.png  (por tarea)
+```
+
+**📦 Preparar archivo para enviar** comprime todo lo anterior en
+`para_enviar/P01_<id_del_estudio>_<fecha>.zip` (junto a la carpeta
+`sessions/`), listo para subir a Google Drive.
+
+El análisis grupal escribe en `resultados/<id_del_estudio>/`:
+
+| Archivo | Contenido |
+| :--- | :--- |
+| `resumen_grupal.txt` | Resumen legible: participantes usados/excluidos (con motivo), éxito, tiempos y TTFF por tarea y grupo. |
+| `sesiones.csv` | **Una fila por participante**: calidad, error en px y grados, y las métricas clave de cada tarea. |
+| `tareas.csv` | Una fila por participante × tarea (todas las métricas de tarea). |
+| `aoi.csv` | Una fila por participante × tarea × AOI. |
+| `resumen_tareas.csv` / `resumen_aoi.csv` | Media, DE y mediana por tarea/AOI, para todo el grupo y por grupo (comparación entre condiciones). |
+| `heatmap_tareaN_dwell.png` / `_densidad.png` / `_pagina.png` / `aoi_tareaN.png` | Mapas **grupales** (cada participante pesa igual) y % de participantes que vio cada AOI. |
+
+Los CSV usan UTF-8 con BOM y encabezados en español: se abren directamente en
+**Excel**, y se importan sin cambios a **SPSS / R / pandas**.
+
+**Columnas de `sessions/.../*.csv`:** `Timestamp_ms`, `Frame_ID`,
+`Gaze_X/Gaze_Y` (pantalla, filtradas), `Pupil_Size` (radio del iris, px de
+cámara), `Event_Type` (`Fixation` · `Saccade` · `Blink` · `Unknown` ·
+`EVENT:<marca>`), `Head_Pitch/Yaw/Roll`, `Sample_Hz`, `Jitter_ms`,
+`Face_Detected`, **`Task_ID`** (0 = fuera de tarea), **`Scroll_X/Scroll_Y`** y
+**`Page_X/Page_Y`** (mirada en coordenadas de la **página**; vacío sin script),
+**`Blink`** y **`Eye_Open`**. El archivo se va guardando cada pocos segundos:
+un corte de luz no pierde la sesión.
+
+**Reglas de exclusión** (configurables en `quality` del estudio): cara
+detectada < 80 %, frecuencia < 8 Hz, error de calibración > 300 px, error de
+verificación > 350 px, duración < 20 s, sin tareas con datos o **sin
+consentimiento**. También se avisan (sin excluir): frecuencia baja,
+precisión que empeora durante la sesión, parpadeos excesivos, AOI menores que el
+error y falta de datos del navegador.
+
+---
+
+## 🔒 Privacidad y ética
+
+* **No se graba video ni fotos.** La cámara sólo alimenta el cálculo de la
+  mirada en tiempo real.
+* **Cuenta del estudiante:** inicia sesión él mismo en el navegador
+  integrado. En la página de login no se inyecta ni se registra nada; al
+  terminar, la ventana se cierra y la sesión se borra. Las capturas de
+  pantalla están desactivadas porque el portal muestra datos personales.
+* **Nada que instalar en el navegador personal** (sin extensiones con acceso
+  a todas las páginas). El prototipo vive en su carpeta: para quitarlo,
+  basta con borrarla.
+* **Anónimo:** se usa un código (P01…). La app **rechaza** códigos con
+  espacios o acentos para que no se cuelen nombres.
+* **Consentimiento** en pantalla antes de grabar (texto estándar o el que
+  pongas en `consent_text`); queda registrado con fecha y versión. Sin
+  aceptarlo **no se graba nada**.
+* Los datos están **sólo en el equipo del participante** hasta que él sube su
+  `.zip` a Drive. `sessions/*/`, `resultados/` y `para_enviar/` están en
+  `.gitignore` para no subirlos por accidente a un repositorio.
+* Confirma con tu asesor/comité si el protocolo requiere aprobación ética
+  formal y adapta `consent_text` a sus requisitos.
+
+---
+
+## 🎯 Precisión y límites (importante)
+
+Una webcam no es un eye tracker infrarrojo. Para interpretar bien los
+resultados:
+
+* **Error típico: 2–4° de ángulo visual** (≈ 100–250 px en una pantalla de
+  laptop). Se mide con cada participante y aparece en el informe en px y en
+  grados (se necesita el ancho físico de la pantalla: se detecta solo o se
+  fija en `display.width_cm`; se asume 60 cm de distancia).
+* Por eso los AOI deben ser **bloques grandes** (menú, banner, tarjeta,
+  formulario), **no palabras ni iconos pequeños**. El informe marca con ⚠ los
+  AOI menores que el doble del error.
+* **Las conclusiones son a nivel de grupo.** Un solo participante con error
+  alto no sirve; la app lo excluye con las reglas de calidad.
+* La precisión **empeora si el participante se mueve mucho**, con mala luz,
+  lentes con reflejos o pestañas/flequillo sobre el ojo. La verificación final
+  mide cuánto se degradó durante la sesión.
+* **Usa siempre el mismo equipo, tamaño de ventana y zoom (100 %)** con todos
+  los participantes.
+* Los heatmaps y las métricas dicen **qué miraron**, no **por qué**. Combínalos
+  con el éxito de la tarea, los tiempos y, idealmente, un breve cuestionario
+  (p. ej. SUS) o una pregunta abierta.
+
+---
+
+## 🧪 Pruebas automáticas
+
+Todo se puede probar **sin cámara ni participantes** con un participante
+virtual (`tests/helpers.py`):
+
+```bash
+python -m unittest discover -s tests -v        # ≈ 3 min (la parte con ventanas tarda más)
+python validacion.py --sin-camara              # modelo geométrico, I-DT, informe
+python validacion.py                           # completo (con cámara y una persona delante)
+```
+
+| Archivo | Qué comprueba |
+| :--- | :--- |
+| `tests/test_foundations.py` | Geometría pantalla→página (Windows/macOS/zoom/Firefox), validación del JSON del estudio, detector de parpadeos y servidor del puente web. |
+| `tests/test_pipeline.py` | Grabador (alineación de scroll/tareas, evento final, autoguardado), fijaciones, métricas por AOI (visitas, TTFF, orden), AOI por selector **bajo el pliegue con scroll**, calidad/exclusión, informe, heatmaps y análisis grupal. |
+| `tests/test_app_flow.py` | La aplicación real con ventanas: calibración → verificación → consentimiento → 3 tareas (terminada, abandonada, tiempo agotado) con eventos del navegador por HTTP → verificación final → revisión (opcional) → informe, heatmaps y análisis grupal; además ensayo, interrupciones y cierre de ventana. *Necesita pantalla.* |
+
+`tools/diag_live.py` y `tools/diag_noise.py` son diagnósticos con cámara real.
+
+---
+
+## 🏗️ Arquitectura
+
+```
+main_app.py                    Interfaz (Guía + 3 pestañas), panel de tareas, flujo de la sesión
+run.bat / run.sh               Lanzadores (Windows / macOS-Linux); instalan solos la 1.ª vez
+Iniciar_Mac.command            Doble clic en macOS (llama a run.sh)
+pagina_prueba.html             Sitio de ensayo (con scroll) para el estudio demo
+studies/                       Un .json por estudio (tareas, AOI, calidad, consentimiento)
+studies/ejemplos/              Demo y portal viejo (no se muestran al participante)
+web/eyetracking_bridge.user.js Script del navegador (scroll, AOI, clics); lo inyecta navegador.py
+
+et_suite/
+  camera.py                    Detección y apertura robusta de cámaras
+  gaze_tracker.py              Motor: pose → mirada 3D → calibración → filtro; parpadeos
+  calibration_engine.py        Calibración 5/9 puntos (ventana Tk en el hilo principal)
+  validation_engine.py         Verificación de precisión (5 puntos distintos, px y grados)
+  filters.py · pupillometry.py Filtro 1€ · I-DT/I-VT, detector de parpadeos
+  study.py                     Carga y validación del estudio (JSON)
+  display.py                   px ↔ grados; pantalla → coordenadas de página
+  web_bridge.py                Servidor local 127.0.0.1:4243 (eventos del navegador)
+  navegador.py                 Navegador integrado (pywebview): abre el sitio e inyecta el script
+  data_logger.py               CSV en segundo plano, alineado con tarea y scroll
+  session_meta.py              .meta.json: participante, consentimiento, calidad
+  metrics.py                   Fijaciones, AOI, métricas por tarea, calidad
+  report.py · heatmap_generator.py   Informe y mapas de calor
+  group_analysis.py            Análisis de todo el grupo (CSV + mapas + resumen)
+  screenshots.py               Captura de pantalla (screencapture / ImageGrab)
+  experiment_server.py         Servidor TCP para OpenSesame (no se usa en la app;
+                               queda para quien quiera integrarlo)
+
+tests/ · validacion.py · synth_gaze.py   Pruebas y simulador cabeza-ojo-pantalla
+tools/                         Diagnósticos con cámara real
+legacy/                        Código histórico (no se usa)
+```
+
+**Flujo de datos de una sesión:**
+
+```
+cámara → mirada (x, y) → DataLogger ──────────────► CSV (+Task_ID, +Page_X/Y)
+                           ▲   ▲
+panel de tareas ───────────┘   └── navegador (scroll, layout, clics) ─► .web.json
+                                                         │
+                       metrics.py ◄──────────────────────┘
+        (fijaciones → AOI → métricas) → informe · heatmaps · análisis grupal
+```
+
+---
+
+## ❓ Si algo falla
+
+| Síntoma | Qué hacer |
+| :--- | :--- |
+| `run.bat` / `run.sh` dice que no hay Python | Instala Python 3.12 de [python.org](https://www.python.org/downloads/) (Windows: marca *Add python.exe to PATH*) y vuelve a abrirlo. |
+| Falla la instalación la primera vez | Revisa la conexión a internet y vuelve a ejecutar el lanzador; si persiste, borra la carpeta `.venv` y repite. |
+| El antivirus bloquea o pregunta por «python» | Permite el acceso a la cámara: es el prototipo. No necesita conexión entrante ni permisos de administrador. |
+| «No se encontró ninguna cámara» | Cierra Zoom/Teams/OBS y pulsa `🔍 Buscar cámaras` (en *▸ ¿No se detecta la cámara?*). En **macOS** da permiso de cámara a la Terminal/editor y reinicia. |
+| La línea «Navegador» no se pone verde | Pulsa **🌐 Abrir el sitio e iniciar sesión** e inicia sesión: en el login no se registra nada a propósito. Si ya entraste y sigue amarilla, el portal te llevó a un dominio que no está en `bridge.hosts`. |
+| La ventana del sitio no se abre (Windows) | Instala *Microsoft Edge WebView2 Runtime* (gratis, de Microsoft) y vuelve a intentarlo. |
+| Al terminar aparece una «nota para el equipo» con otro dominio | El portal usó otro dominio durante las tareas: agrégalo a `bridge.hosts` en el JSON del estudio. |
+| Un AOI por selector sale «no visto» siempre | El selector no coincide: pruébalo en la consola del navegador con `document.querySelector("…")`. |
+| No me deja iniciar la sesión | Mira la lista de la pestaña **Sesión**: lo que está en rojo bloquea (calibrar a *este* participante, código válido, grupo, cámara). |
+| La calibración sale mala (> 300 px) | Mejora la luz frontal, acerca/alinea la cámara con los ojos, que se vea la cara en el indicador verde y **repite**. |
+| Verificación alta (> 350 px) | Repite la calibración; si persiste, revisa lentes con reflejos y distancia (~60 cm). |
+| Sesión «excluida» | Abre el informe: el motivo está al principio. Puedes forzar su inclusión en el análisis con la casilla *Incluir sesiones excluidas*. |
+| «Puerto 4243 ocupado» | Hay otra copia de la app abierta; ciérrala. |
+| Va a saltos / pocos FPS | Elige `Auto (recomendado)`; si la cámara da < 12 FPS usa otra o más luz. |
+| Los heatmaps salen con fondo blanco | No hay captura: en macOS falta el permiso de *Grabación de pantalla*; también puedes poner una imagen en `background` de la tarea. |
+| El CSV sale vacío | La sesión duró < 1 s o no se detectó el rostro. |
+
+---
+
+## 🧠 Cómo funciona la mirada (técnico)
+
+### Mirada invariante a la cabeza
+
+Medir el iris **en píxeles de la imagen** mezcla hacia dónde mira el ojo y
+hacia dónde apunta la cabeza; por eso una calibración clásica sólo vale si no te
+mueves. La solución es pasar todo a **geometría 3D**:
 
 ```
 1. solvePnP (14 puntos)  →  R (orientación de la cabeza)  y  t (posición)
@@ -32,446 +558,57 @@ La solución es pasar todo a **geometría 3D**:
                             se ajusta una transformación afín a píxeles
 ```
 
-El paso 4 es la clave: la dirección sale en coordenadas de cámara, así que
-**girar la cabeza no la cambia** mientras se siga mirando al mismo punto. Y
-como el paso 5 usa la posición 3D del ojo, **acercarse o alejarse tampoco**.
-
-### El plano de la pantalla
-
-La calibración sólo tiene que estimar una cosa: dónde está el plano de la
-pantalla (`Z`). Con `Z` fijo el ajuste es **lineal**, así que se barre una
-rejilla de distancias y se resuelve un sistema lineal por cada una — barato y
-sin mínimos locales.
-
-Con la cabeza quieta, `Z` **no es identificable**: cualquier `Z` da un ajuste
-afín exacto (el punto de corte del rayo y el punto real difieren en una
-transformación afín). Por eso se elige la distancia **más cercana a 0** entre
-las que dan un RMS prácticamente idéntico. Es la geometría real de una webcam
-de portátil — la pantalla está en el plano del objetivo — y equivocarse en
-±50 mm cuesta menos de 20 px.
-
----
-
-## 🚀 Arranque rápido (Windows)
-
-```powershell
-cd C:\VSCode\EyeTrackingCosa
-.\run.bat
-```
-
-`run.bat` busca un Python que tenga `tkinter` **y** las dependencias. Es
-necesario porque el `python` que está primero en el `PATH` de esta máquina
-**no tiene `tkinter`** y la aplicación moría al arrancar sin decir por qué.
-
-Si prefieres lanzarlo a mano:
-
-```powershell
-C:\Python313\python.exe main_app.py          # el que tiene todo instalado
-C:\Python313\python.exe main_app.py --camera 1        # forzar cámara 1
-C:\Python313\python.exe main_app.py --quality high    # intentar 1280×720
-```
-
----
-
-## 📋 Requisitos
-
-* **Python 3.11 – 3.13 con `tcl/tk`** (marcar *"tcl/tk and IDLE"* en el
-  instalador de python.org).
-* Una webcam cualquiera (integrada, USB, o virtual tipo OBS / DroidCam).
-* Windows 10/11, macOS o Linux.
-
-```powershell
-python -m pip install -r requirements.txt
-```
-
-Dependencias reales: `opencv-python`, `mediapipe`, `numpy`, `scipy`,
-`Pillow`, `screeninfo`, `pywin32` (sólo Windows, para el overlay).
-
----
-
-## 🖥️ Guía de uso
-
-1. **Cámara.** Al abrir, la app busca sola una cámara que entregue imagen.
-   La línea *Cámara:* muestra cuál eligió y a cuántos FPS reales.
-   * `🔍 Detectar cámaras` lista todas y puedes cambiar en caliente.
-   * `🎥 Debug` abre la vista de la cámara con iris, ejes de cabeza y
-     contadores en vivo. **Si algo va mal, mira aquí primero.**
-
-2. **Calibración.** Elige 9 puntos (recomendado) y pulsa `🎯 Calibrar Ahora`.
-   * **Amarillo pulsante** → lleva la mirada al punto.
-   * **Verde fijo** → se están capturando muestras.
-   * **No hace falta quedarte rígido.** El modelo es invariante a la cabeza;
-     puedes sentarte con naturalidad. De hecho, moverte un poco durante la
-     calibración ayuda: permite estimar la distancia a la pantalla.
-   * Al terminar te dice el **error medio en píxeles**. Por debajo de 250 px
-     es buena. Se guarda sola en `calibracion.json`.
-
-3. **Sesión.** Escribe el ID del participante y pulsa `▶ Iniciar`.
-   * Aparece un círculo verde siguiendo tu mirada.
-   * **El círculo deja pasar los clics**: puedes usar Chrome, Word o lo que
-     sea con total normalidad mientras graba. (Antes no: el overlay se comía
-     todos los clics y era imposible navegar.)
-   * `⬛ Detener` guarda el CSV en `sessions/`.
-
-4. **Análisis.**
-   * `🗺 Heatmaps` → elige el tipo con los botones de radio y pulsa el botón.
-     - **No hace falta elegir ningún CSV**: la app usa sola la sesión que
-       acabas de grabar, o la más reciente de `sessions/`. Sólo pregunta si
-       todavía no hay ninguna.
-     - Después pregunta por un **fondo opcional**: si le das una captura de
-       la página que estabas mirando, el heatmap se pinta encima y se
-       interpreta mucho mejor. Cancelar = fondo blanco.
-     - Genera hasta 3 PNG **junto al CSV** de la sesión y abre la carpeta:
-       `..._density.png`, `..._dwell.png`, `..._scanpath.png`.
-     - Ver la sección [Los heatmaps explicados](#-los-heatmaps-explicados).
-   * `📋 Informe: ¿qué miró primero?` → abre una ventana con:
-     - **Orden de fijación**: las primeras N fijaciones con instante,
-       posición, duración y zona de pantalla.
-     - **TTFF**: cuánto tardó en fijar la mirada.
-     - **Mapa de atención 3×3** con porcentajes y ranking de zonas.
-     - Métricas: fijaciones, sacadas, duración media.
-     Se guarda como `*_informe.txt` junto al CSV.
-
-5. **Página de prueba.** `🌐 Página de prueba` abre `pagina_prueba.html`,
-   una página con zonas bien diferenciadas (título, bloque morado, tarjetas,
-   botón) pensada para que el heatmap y el informe sean interpretables.
-
----
-
-## 🔧 Qué se arregló (y por qué no funcionaba)
-
-El síntoma era "la app abre pero no hace nada / la mirada salta por toda la
-pantalla". Estas eran las causas, en orden de gravedad:
-
-### 1. El modelo 3D de `solvePnP` tenía el eje Y invertido
-Con la cara de frente, la orientación de cabeza salía con **pitch ≈ 170°**
-(debería ser ≈ 0°). El vector de mirada se construía como
-`gx = iris_dx + 0.65·yaw`, `gy = iris_dy − 0.55·pitch`, así que **toda la
-señal de mirada era basura de pose, no mirada**. Corregido el signo de Y y
-cambiado a `SOLVEPNP_SQPNP`: pitch pasa a ~14° ± 1° con la cara de frente.
-
-### 2. El frame se espejaba antes de detectar los landmarks
-`cv2.flip(raw, 1)` intercambia los landmarks izquierda/derecha, lo que rompe
-la correspondencia con el modelo 3D y cambia el signo del yaw. Ahora se
-detecta sobre el frame **real**; el espejo se aplica sólo a la
-previsualización de debug, para que te veas natural.
-
-### 3. `cv2.VideoCapture(0)` y ya
-Si ese índice no existía, estaba ocupado o el backend fallaba, el hilo moría
-**en silencio** y la app parecía colgada. Ahora:
-* Prueba backends (DSHOW / MSMF / AVFoundation / V4L2).
-* Prueba índices y descarta cámaras que no entregan imagen real (negras o
-  planas, típico de cámaras virtuales sin señal).
-* **Mide los FPS reales** y baja la resolución si no alcanzan el mínimo.
-* Si la cámara se cae, reintenta sola. Si no hay ninguna, lo dice en la UI.
-
-### 4. Se forzaba 1280×720 aunque la cámara no pudiera
-Medido en esta máquina: la webcam da **15 fps a 640×480 pero sólo 5 fps a
-1280×720** (y declara `YUY2`, ignora el MJPG que se le pedía). A 5 fps la
-detección de fijaciones no funciona: dos muestras quedan separadas 200 ms.
-Ahora se mide y se negocia la resolución automáticamente.
-
-### 5. El clasificador de fijaciones era inútil con webcam
-I-VT con umbral 80 px/s sobre 15 fps y ruido de ~60 px etiqueta **casi todo
-como sacada**. En tu sesión anterior: **772 sacadas y 8 fijaciones** de 781
-muestras. Con señal sintética de 6 fijaciones conocidas, I-VT localiza
-**0/6**. Sustituido por **I-DT con métrica de desviación estándar**: localiza
-**6/6**.
-
-### 6. La vista previa saturaba en las esquinas
-`px = centro + gx · ancho · 3.2` con recorte `clip()` mandaba el punto a la
-esquina y ahí se quedaba (se veía `gaze=(1916, 0)`). Ahora usa `tanh`, que
-nunca satura.
-
-### 7. El overlay se comía los clics
-Una ventana a pantalla completa *always-on-top* bloquea el ratón. Se añadió
-`WS_EX_TRANSPARENT` (+ `LAYERED`, `TOOLWINDOW`, `NOACTIVATE`), verificado por
-test. Ahora puedes usar el navegador mientras graba.
-
-### 8. La calibración no daba ninguna señal de calidad
-Ahora rechaza outliers por punto (iris + pose, criterio MAD×3), estandariza
-las columnas antes de Ridge, informa el error RMS y se puede guardar/cargar.
-Validado end-to-end: **error de predicción de 10 px** sobre 1920 px.
-
-### 9. El modelo L2CS-Net no existe
-El README prometía un modelo ONNX de Hugging Face que **no se puede
-descargar** (`RepositoryNotFoundError` en `ashwinraj97/L2CS-Net`). Se eliminó
-la promesa y el código que dependía de él.
-
-### 10. La mirada se rompía al mover la cabeza ← *el problema grande*
-El cálculo del iris era **puramente 2D y en el sistema de la cabeza**: se
-medía el desplazamiento del iris respecto a las esquinas del ojo, que son
-solidarias al cráneo. Mientras no te movieras, la regresión polinómica
-compensaba; en cuanto giradas la cabeza, esas features cambiaban aunque
-siguieras mirando al mismo punto y **la predicción se iba a cualquier parte**.
+La dirección sale en coordenadas de cámara, así que **girar la cabeza no la
+cambia** mientras se mire al mismo punto; y como el paso 5 usa la posición 3D
+del ojo, **acercarse o alejarse tampoco**. La calibración sólo estima el plano
+de la pantalla (`Z`): con `Z` fijo el ajuste es lineal, se barre una rejilla de
+distancias y, como con la cabeza quieta `Z` no es identificable, se elige la
+más cercana a 0 entre las de RMS prácticamente idéntico (la pantalla de un
+portátil está en el plano del objetivo).
 
 Medido sobre el simulador `synth_gaze.py` (cabeza 3D + ojos esféricos +
 pantalla, con verdad conocida):
 
-| Movimiento | Antes | Ahora | Mejora |
-| :--- | ---: | ---: | ---: |
-| Cabeza quieta | 54 px | 51 px | 1× |
-| Giro leve ±8° | 509 px | 51 px | 10× |
-| Giro medio ±16° | 754 px | 51 px | 15× |
-| Lateral ±60 mm | 1118 px | 52 px | 22× |
-| Acercarse/alejarse ±80 mm | 240 px | 51 px | 5× |
-| Arriba/abajo ±40 mm | 557 px | 52 px | 11× |
-| Movimiento combinado | 1138 px | 53 px | 22× |
+| Movimiento | Antes (polinomial) | Ahora (geométrico) |
+| :--- | ---: | ---: |
+| Cabeza quieta | 58 px | 51 px |
+| Giro leve ±8° | 460 px | 51 px |
+| Giro medio ±16° | 672 px | 51 px |
+| Lateral ±60 mm | 930 px | 52 px |
+| Acercarse/alejarse | 222 px | 51 px |
+| Movimiento combinado | 946 px | 53 px |
 
-Lo importante no es sólo el factor: es que **el error ya no depende del
-movimiento**. Antes crecía sin límite al moverte; ahora es una constante de
-~51 px, que es el error de calibración, no de postura.
+(Con el ruido real de landmarks, ≈ 1 px: 610 px frente a 193 px.) El error ya
+no depende del movimiento. `validacion.py` repite esta medición con el código
+de producción en cada ejecución.
 
-Además se encontraron dos bugs que impedían que esto funcionara:
+### Del ruido a las fijaciones
 
-* **La descomposición Euler tenía una singularidad justo en la postura
-  normal.** Con la cara mirando de frente al objetivo, `R ≈ Ry(180°)` y el
-  pitch salía **180°** en vez de 0°. Ahora se detecta esa zona y se descompone
-  respecto a la postura "de frente".
-* **La pose podía caer en la rama espejada** (la cara "mirando hacia afuera")
-  porque el modelo facial es casi plano y `solvePnP` tiene ahí una ambigüedad
-  real. Se añadió el **error de reproyección** como control de calidad de la
-  pose, que no depende de ninguna convención de ángulos.
+* **Filtro 1€** sobre el vector geométrico: reduce el ruido ~4× sin añadir lag
+  en las sacadas.
+* **I-DT** (por dispersión) en lugar de I-VT: con 15–30 fps y ruido de decenas
+  de píxeles, I-VT etiqueta casi todo como sacada (localiza 0 de 6 fijaciones
+  conocidas; I-DT, 6 de 6).
+* Las muestras de **parpadeo** se excluyen para no contaminar las fijaciones.
+* El grabador lee un histórico **no destructivo** (`get_since`): GUI,
+  calibración y grabación no compiten por las muestras (0 % de pérdida medida).
 
-### 11. El ruido de landmarks se amplificaba ×12
-La reconstrucción 3D es sensible al ruido: el globo ocular mide 12 mm y un
-píxel a 550 mm son ~0,9 mm, o sea ~4° de ángulo. Dos medidas lo resolvieron:
+### De fijaciones a heatmaps
 
-* **Filtro 1€ sobre el vector geométrico** (6 componentes), con los
-  coeficientes `beta` escalados a cada señal. Reduce el ruido ~4× y se abre
-  solo durante las sacadas para no añadir lag.
-* **Ruido correlacionado.** Medido en vivo con `_t_noise.py`, el ruido de
-  MediaPipe es mayormente **global** (toda la cara se desplaza junta,
-  1,1 px/frame), no independiente. Ese componente **se cancela** al restar
-  iris − centro del ojo. Sólo molesta el independiente (1,05 px), y contra ese
-  está el filtro.
+1. Las filas consecutivas `Fixation` se agrupan en una fijación (centroide +
+   duración; sólo se conservan las ≥ 150 ms).
+2. Se suma cada fijación en un lienzo y se aplica un desenfoque gaussiano
+   (σ = 55 px, configurable) y un mapa térmico (azul → rojo).
 
-Resultado medido en vivo: el ruido de la mirada baja de **151 px** (método
-antiguo) a **31 px** (geométrico) y **8 px** con filtro.
-
----
-
-### 12. El grabador perdía la mitad de las muestras ← *por qué los heatmaps salían mal*
-
-Este fue el último bug y el más silencioso. Todos los consumidores —la GUI,
-el calibrador y el grabador— leían la **misma** cola:
-
-```python
-def get_latest(self):
-    while True:
-        try:
-            latest = self.sample_queue.get_nowait()   # ← VACÍA la cola
-        except queue.Empty:
-            break
-    return latest
-```
-
-Como `get_latest()` vaciaba la cola, **el que llegaba primero se llevaba la
-muestra**. La GUI refresca a 60 Hz, así que le robaba datos al grabador.
-
-Medido sobre un CSV real: la cámara daba 15 Hz, el tracker reportaba 15 Hz,
-pero el CSV sólo tenía **7,3 Hz**, con huecos de hasta **736 ms**. A esa
-frecuencia la detección de fijaciones no puede funcionar, y el scanpath sale
-como una maraña de líneas.
-
-**Arreglo.** El tracker ahora mantiene un histórico circular que se lee sin
-consumir:
-
-* `get_latest()` → devuelve el último sample. **No destruye nada**, así que la
-  GUI puede consultar a 60 Hz sin robarle datos a nadie.
-* `get_since(frame_id)` → devuelve *todas* las muestras nuevas desde un
-  cursor. Lo usa el grabador, que ya no pierde ninguna aunque su bucle se
-  retrase.
-
-Medido después del arreglo, con la GUI consultando 706 veces durante la
-grabación: **0,0 % de muestras perdidas** y **30,1 Hz** efectivos.
-
----
-
-### 13. El archivo de calibración degradaba el modelo en silencio
-
-`load()` hacía esto:
-
-```python
-self.method = d.get("method", self.method)
-```
-
-Es decir, **el archivo guardado decidía qué modelo usaba la aplicación**. Si
-había un `calibracion.json` ajustado con el modelo polinómico antiguo, al
-abrirlo la app bajaba a ese modelo — sin invariancia a la cabeza — y no lo
-decía. El usuario creía estar usando el modelo nuevo y estaba usando el viejo.
-
-Los parámetros guardados sólo son válidos para el modelo con el que se
-ajustaron, así que ahora `load()` **rechaza** el archivo si el método no
-coincide y pide recalibrar. Hay una comprobación en `validacion.py` que lo
-verifica (`una calibración de OTRO modelo se rechaza`).
-
-> **Consecuencia práctica:** si tenías una calibración vieja, al abrir la app
-> verás *SIN CALIBRAR*. Es lo correcto — pulsa `🎯 Calibrar Ahora` una vez y
-> ya quedas en el modelo geométrico.
-
----
-
-## 🗺️ Los heatmaps explicados
-
-### El recorrido completo
-
-```
-cámara → 478 landmarks → mirada (x, y) en pantalla → CSV
-                                                      │
-                                          (al pulsar "Heatmaps")
-                                                      ↓
-                          se agrupan las muestras en FIJACIONES
-                                                      ↓
-                              se pinta un mapa y se le aplica color
-                                                      ↓
-                                     3 PNG junto al CSV de la sesión
-```
-
-### Paso 1 · De muestras a fijaciones
-
-El CSV tiene una fila por frame (30 por segundo). Pero el ojo no lee así: hace
-**fijaciones** (se queda quieto 200–600 ms mirando algo) separadas por
-**sacadas** (saltos rápidos). Cada fila ya viene etiquetada como `Fixation` o
-`Saccade` por el clasificador I-DT.
-
-El heatmap agrupa las filas consecutivas marcadas `Fixation` en un solo punto:
-el **centroide** (el promedio de X y de Y) y su **duración**. Una fijación de
-600 ms cuenta como un punto, no como 18.
-
-Sólo se conservan las fijaciones de **≥ 150 ms**: por debajo de eso el ojo está
-en tránsito, no fijando.
-
-### Paso 2 · De fijaciones a mapa de calor
-
-Se crea una imagen de 1920×1080 en negro y se suma un punto en la posición de
-cada fijación. Ese mapa se pasa por un **desenfoque gaussiano**
-(`scipy.ndimage.gaussian_filter`, σ = 55 px), que reparte cada punto en un halo
-suave. Después se normaliza a 0–1 y se le aplica un **mapa de color térmico**
-(`cv2.COLORMAP_JET`): azul = frío, rojo = caliente.
-
-Finalmente se mezcla sobre el fondo con transparencia (α = 0,65), pero sólo
-donde la densidad supera un umbral — si no, el halo gaussiano acabaría
-coloreando la pantalla entera.
-
-### Paso 3 · Los tres archivos
-
-| Archivo | Qué responde | Cómo se calcula |
+| Imagen | Responde | Peso de cada fijación |
 | :--- | :--- | :--- |
-| `..._density.png` | **¿Dónde** miró? | Cada fijación pesa **1**, sin importar cuánto duró |
-| `..._dwell.png` | **¿Cuánto tiempo** miró ahí? | Cada fijación pesa su **duración en ms** |
-| `..._scanpath.png` | **¿En qué orden** miró? | Círculos numerados unidos por flechas |
+| `_density.png` | ¿**Dónde** miró? | 1 |
+| `_dwell.png` | ¿**Cuánto tiempo**? | su duración (ms) |
+| `_scanpath.png` | ¿**En qué orden**? | círculos numerados (tamaño = duración) |
+| `_pagina.png` | Lo mismo sobre la **página completa** (con scroll) | su duración |
 
-La diferencia entre los dos primeros importa: una zona puede tener **una** sola
-fijación muy larga (dwell alto, densidad baja) o **muchas** fijaciones cortas
-(densidad alta, dwell bajo). Son dos preguntas distintas.
-
-### Cómo leer el scanpath
-
-* El **número** es el orden temporal. `1` es lo **primero** que miró.
-* El **tamaño del círculo** es cuánto duró esa fijación.
-* Las **flechas** unen fijaciones consecutivas: son las sacadas.
-
-Si la numeración salta de un lado a otro de la pantalla, o hay fijaciones de
-1–2 muestras, la estimación de mirada está ruidosa. Un scanpath sano avanza en
-tramos cortos y se detiene en las zonas con contenido.
-
-### Por qué salían mal (y ya no)
-
-Con la mitad de las muestras perdidas, el clasificador I-DT recibía datos cada
-~137 ms en vez de cada ~33 ms. Eso partía fijaciones reales en trozos y creaba
-fijaciones falsas, y el resultado era una maraña de líneas cruzando la pantalla.
-
-Con el arreglo del punto 12 hay 4× más datos, las fijaciones son más estables y
-el scanpath se puede leer.
-
----
-
-## 🧪 Validación
-
-```powershell
-C:\Python313\python.exe validacion.py     # 17 comprobaciones
-C:\Python313\python.exe _t_pose.py        # invariancia a la cabeza (detallado)
-C:\Python313\python.exe _t_noise.py       # ruido real de los landmarks
-C:\Python313\python.exe _t_live.py        # verificación en vivo
-```
-
-`validacion.py` incluye una prueba que mete landmarks sintéticos por las
-**mismas clases que usa la app** (`_HeadPoseEstimator`, `_EyeGazeExtractor`,
-`GazeCalibrator`) y mide el error al mover la cabeza. Así se valida el código
-de producción, no un prototipo aparte.
-
-Resultado actual: **17/17**.
-
----
-
-## 🏗️ Arquitectura
-
-```
-main_app.py                    UI Tkinter + overlay click-through
-pagina_prueba.html             Página de estímulo para las pruebas
-run.bat                        Lanzador que encuentra el Python correcto
-
-et_suite/
-  camera.py                    Detección y apertura robusta de cámaras
-  gaze_tracker.py              Motor: pose → mirada 3D → calibración → filtro
-  calibration_engine.py        Ventana de calibración 5/9 puntos
-  filters.py                   Filtro 1€ (One Euro Filter)
-  pupillometry.py              Pupila, clasificadores I-VT e I-DT, AOI, TTFF
-  data_logger.py               Grabación a CSV en segundo plano
-  heatmap_generator.py         Heatmaps de densidad / dwell / scanpath
-  report.py                    Informe: orden de fijación y zonas de atención
-  experiment_server.py         Servidor TCP para OpenSesame
-
-synth_gaze.py                  Simulador cabeza-ojo-pantalla (verdad conocida)
-validacion.py                  17 comprobaciones del sistema completo
-```
-
-### Pipeline
-
-```
-cámara → FaceLandmarker (478 pts) → solvePnP 14 pts → mirada 3D → calibración
-                                          │                          → filtro 1€ → CSV
-                                          ├─ R, t: orientación y posición de la cabeza
-                                          ├─ E: centro de los globos oculares (mm)
-                                          └─ d: dirección de mirada en coordenadas
-                                                de cámara  ← invariante a la cabeza
-```
-
-La calibración geométrica corta el rayo `E + λ·d` con el plano de la pantalla
-y ajusta una **transformación afín** de 6 parámetros. El polinomio de 2º orden
-sigue disponible (`method="polynomial"`) como respaldo, pero es peor en todos
-los escenarios medidos.
-
----
-
-## 📊 Columnas del CSV
-
-| Columna | Descripción |
-| :--- | :--- |
-| `Timestamp_ms` | Tiempo absoluto (`time.perf_counter()` × 1000) |
-| `Frame_ID` | Número de fotograma |
-| `Gaze_X` / `Gaze_Y` | Coordenadas en pantalla, filtradas |
-| `Pupil_Size` | Radio del iris en px |
-| `Event_Type` | `Fixation` / `Saccade` / `EVENT:<label>` |
-| `Head_Pitch` / `Head_Yaw` / `Head_Roll` | Orientación de cabeza en grados |
-| `Sample_Hz` / `Jitter_ms` | Frecuencia y estabilidad temporal |
-| `Face_Detected` | 1 = rostro visible |
-
----
-
-## ❓ Si algo falla delante del profesor
-
-| Síntoma | Qué hacer |
-| :--- | :--- |
-| "No se encontró ninguna cámara" | Cierra Zoom/Teams/OBS. Pulsa `🔍 Detectar cámaras`. |
-| Se abre pero no hay imagen | Mira `🎥 Debug`. Si sale negro, la cámara está ocupada. |
-| El punto va a la esquina y no se mueve | Falta calibrar. El texto ámbar *SIN CALIBRAR* lo indica. |
-| Va a saltos / pocos FPS | La línea *Cámara* muestra los FPS. Si son <12, cambia a `Auto (recomendado)`. |
-| Dice "Sin cara detectada" | Ilumina la cara de frente, a 50-70 cm. Evita contraluz. |
-| La calibración sale MALA | Que la ventana de calibración te vea la cara (indicador verde abajo). **Ya no hace falta quedarse quieto**: el modelo es invariante a la cabeza. |
-| La mirada se va al moverme | No debería. Comprueba en `🎥 Debug` que el *error de reproyección* de la pose es bajo. Si te mueves mucho, la cámara puede perder la cara. |
-| El CSV sale vacío | La sesión duró <1 s o no se detectó el rostro. |
+Un scanpath sano avanza en tramos cortos y se detiene en zonas con contenido; si
+salta de un lado a otro de la pantalla la estimación es ruidosa.
 
 ---
 
@@ -481,4 +618,4 @@ los escenarios medidos.
 * One Euro Filter — Casiez, Roussel & Vogel, CHI 2012
 * I-DT — Salvucci & Goldberg, ETRA 2000
 * Eye model-based gaze estimation — Guestrin & Eizenman, IEEE TBME 2006
-* L2CS-Net (referencia, no usado) — Abdelrahman et al., 2022
+* Webcam eye tracking en usabilidad — Papoutsaki et al., *WebGazer*, IJCAI 2016

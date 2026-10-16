@@ -16,14 +16,15 @@ el profesor pregunta, no vas a poder defenderlas. Corrígelas antes de exponer.
 | **OpenCV** — "homografía (findHomography con RANSAC)" | ⚠️ La homografía es sólo un método de respaldo. El que se usa es el **geométrico 3D**. | "estimación de pose cefálica 3D (solvePnP) y proyección geométrica de la mirada" |
 | **NumPy** — "regresión polinomial multivariada con Ridge" | ⚠️ Ese era el método viejo. El nuevo ajusta una **transformación afín** sobre la mirada reconstruida en 3D. | "álgebra lineal: reconstrucción 3D del globo ocular y ajuste afín de la calibración" |
 | **Algoritmo I-VT** — "separa Fijaciones vs Sacadas" | ⚠️ Se usa **I-DT** (por dispersión), no I-VT. I-VT sólo localizaba 0 de 6 fijaciones. | "Algoritmo **I-DT** (Dispersion-Threshold)" |
-| **Pillow (PIL)** — "composición de capturas de fondo" | ❌ **No se usa.** Eso lo hace OpenCV (`cv2.resize`, `cv2.addWeighted`). | **Borra esa fila.** |
+| **Pillow (PIL)** — "composición de capturas de fondo" | ⚠️ Los fondos se componen con OpenCV (`cv2.resize`, `cv2.addWeighted`). Pillow sólo hace la captura de pantalla en Windows. | Bórrala o ponla como «captura de pantalla (Windows)». |
 | MediaPipe, SciPy, Filtro 1€, Tkinter | ✅ Correctas | Déjalas igual |
 
 **También:**
 
-* La **captura de pantalla de la app** es de la versión 2.0 y muestra
-  *"Método: Polinomial / Homografía"*. Ahora hay una opción **"Geométrico
-  (recomendado)"** que viene marcada por defecto. **Vuelve a tomar la captura.**
+* La **captura de pantalla de la app** es de la versión 2.0 (fondo oscuro y
+  *"Método: Polinomial / Homografía"*). La interfaz actual es clara (blanco y
+  amarillo) y usa siempre el método **geométrico**, sin opciones técnicas a
+  la vista. **Vuelve a tomar la captura.**
 * La diapositiva del CSV dice *"Clasificación algorítmica I-VT"* → cámbialo a
   **I-DT**.
 * Las imágenes de la diapositiva de heatmaps parecen ideales, no de una sesión
@@ -58,9 +59,10 @@ enumeres todas de corrido.
 >
 > Después **graba**: mientras la persona navega, la app estima hacia dónde mira
 > unas 30 veces por segundo y lo guarda en un archivo. La ventana de calibración
-> es a pantalla completa para que nada te distraiga, y durante la grabación
-> aparece un círculo que sigue tu mirada pero **deja pasar los clics** — así
-> puedes usar el navegador con total normalidad."
+> es a pantalla completa para que nada te distraiga. Durante la grabación el
+> participante sólo ve su navegador y un panelito con la tarea (*Comenzar /
+> Terminé / No pude*); la mirada **no** se muestra en pantalla para no
+> influir en cómo mira."
 
 ---
 
@@ -129,11 +131,11 @@ Si sólo te queda un minuto:
 
 # 4. Recordatorio antes de presentar
 
-- [ ] **Calibra una vez** al abrir la app (`🎯 Calibrar Ahora`). Si no, verás
+- [ ] **Calibra una vez** al abrir la app (`🎯 Calibrar y verificar`). Si no, verás
       *SIN CALIBRAR*.
 - [ ] **Vuelve a tomar la captura de pantalla** de la app (la actual es de la
       v2.0).
-- [ ] Corrige la tabla de tecnologías (borra ONNX Runtime y Pillow).
+- [ ] Corrige la tabla de tecnologías (borra ONNX Runtime; Pillow sólo se usa para la captura de pantalla en Windows).
 - [ ] Cambia "I-VT" por "I-DT" en la diapositiva del CSV.
 - [ ] Haz una **sesión de prueba** y usa esos PNG reales, no los ideales.
-- [ ] Si algo falla en vivo, abre `🎥 Debug` y mira ahí.
+- [ ] Si algo falla en vivo, abre `🎥 Ver cámara` y mira ahí.
