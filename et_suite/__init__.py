@@ -8,7 +8,6 @@ from .pupillometry import (PupilTracker, BlinkDetector, IVTClassifier,
 from .calibration_engine import CalibrationEngine
 from .validation_engine import ValidationEngine
 from .data_logger import DataLogger
-from .experiment_server import ExperimentServer
 from .web_bridge import WebBridge
 from .study import Study, StudyError, load_study, scan_studies
 from .metrics import Analysis, analyze_csv, analyze_session, load_session
@@ -23,7 +22,7 @@ __all__ = [
     "PupilTracker", "BlinkDetector", "IVTClassifier", "IDTClassifier", "AOI",
     "CalibrationEngine", "ValidationEngine",
     "DataLogger",
-    "ExperimentServer", "WebBridge",
+    "WebBridge",
     "Study", "StudyError", "load_study", "scan_studies",
     "Analysis", "analyze_csv", "analyze_session", "load_session",
     "HeatmapGenerator", "analyze_study",

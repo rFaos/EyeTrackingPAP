@@ -42,7 +42,9 @@ Funciona en **Windows** y **macOS** (y en Linux con Tk).
 | **Éxito verificado** | El participante dice si terminó; el **facilitador confirma** si fue correcto (la métrica de éxito usa el veredicto del facilitador). |
 | **Calidad por participante** | Calibración **con cada persona**, verificación de precisión al inicio y **al final**, y reglas de exclusión automáticas (cara detectada, frecuencia, error de calibración/validación, duración, consentimiento). |
 | **Grupo completo** | CSV para Excel/SPSS/R (por sesión, tarea y AOI), resúmenes con media/DE/mediana, comparación entre grupos y **mapas de calor grupales** (cada participante pesa igual). |
-| **Heatmaps** | Densidad, dwell, scanpath por tarea, sobre una **captura automática** de la pantalla y sobre la **página completa** cuando hubo scroll. |
+| **Flujo de cada tarea** | Los pasos del diagrama (`"flow"` en el estudio): clic en un elemento, que aparezca un menú, bajar hasta un panel, mirarlo, cambiar de página o salir a otro sitio. El informe marca cuáles hizo cada participante, en qué orden y en qué segundo. |
+| **Heatmaps sobre lo que vio** | El navegador integrado guarda imágenes de la página (sin permisos extra en macOS); el análisis reconstruye la página completa con el scroll y pinta encima el **mapa de calor** y el **recorrido** de la mirada, por participante y del grupo. |
+| **Informe fácil de leer** | `…_informe.html`: si los datos sirven, y por tarea el resultado, los pasos del flujo y las imágenes. |
 | **Ética** | Consentimiento en pantalla, códigos P01/P02 (sin nombres), no se guarda video. |
 | **Precisión honesta** | Error de calibración y verificación en **px y en grados** de ángulo visual; avisa si un AOI es menor que el error. |
 
@@ -57,7 +59,7 @@ en Windows deja marcado *«Add python.exe to PATH»*), una webcam e internet.
 | Sistema | Cómo abrirlo |
 | :--- | :--- |
 | **Windows** | Doble clic en `run.bat`. Si aparece *«Windows protegió su PC»*: **Más información → Ejecutar de todas formas**. |
-| **macOS** | Doble clic en `Iniciar_Mac.command` (si macOS no lo deja: clic derecho → Abrir). O en la Terminal, dentro de la carpeta: `bash run.sh` |
+| **macOS** | En la Terminal: `bash ` + arrastrar `run.sh` + Enter (no pasa por Gatekeeper). O doble clic en `Iniciar_Mac.command`; si macOS dice que no puede verificarlo: *Ajustes del Sistema → Privacidad y seguridad → Abrir de todos modos*. |
 
 **La primera vez** el lanzador crea solo un entorno `.venv` e instala las
 dependencias (≈ 3–5 min, necesita internet); las siguientes veces abre
@@ -72,8 +74,12 @@ de la app:
   que «python» quiere usar la cámara, hay que permitirlo.
 * **Grabación de pantalla (macOS): no se necesita** en este estudio
   (`"capture_screenshots": false`).
-* **Firewall:** no pide permiso; el servidor local sólo escucha en
-  `127.0.0.1` (no acepta conexiones de otros equipos).
+* **Firewall / antivirus:** con el estudio real el prototipo **no abre
+  ningún puerto de red**: el navegador integrado le pasa los datos por su
+  propio canal (stdin/stdout del proceso). Sólo la página demo
+  (`--estudios studies/ejemplos`) levanta un servidor, y únicamente en
+  `127.0.0.1`. Tampoco hay ganchos de teclado/ratón globales, capturas de
+  pantalla (desactivadas) ni nada instalado fuera de la carpeta.
 * **Navegador:** ninguno. En Windows el navegador integrado usa *Microsoft
   Edge WebView2*, que ya viene con Windows 11 (en Windows 10 casi siempre
   también); en macOS usa el motor de Safari.
@@ -91,14 +97,13 @@ python main_app.py --ensayo                # grabar sin calibrar (sólo equipo)
 
 ## 🚀 Arranque
 
-La ventana tiene cuatro pestañas:
+La ventana tiene tres pestañas:
 
 | Pestaña | Para qué sirve |
 | :--- | :--- |
-| **Guía** | Los pasos de la prueba, los permisos (cámara, antivirus), cómo abrir el sitio e iniciar sesión, y cómo enviar los datos. Se adapta a Windows o macOS. |
-| **1 · Preparación** | Ver el estudio (si hay varios, elegirlo), escribir el **código asignado** al participante y **calibrar + verificar**. Si la cámara no aparece, *▸ ¿No se detecta la cámara?* permite buscarla y elegirla. |
-| **2 · Sesión** | Lista de comprobaciones («semáforo»), **🌐 Abrir el sitio e iniciar sesión** (navegador integrado), iniciar/terminar la sesión y **📦 Preparar archivo para enviar** (un `.zip` para Google Drive). El enlace *❔ Ver la guía* lleva a la pestaña Guía. |
-| **3 · Resultados** | Para el equipo: informe y heatmaps de una sesión, **revisar si cada tarea fue correcta** y **análisis grupal**. |
+| **Guía** | Permisos (cámara, antivirus, macOS), los pasos y problemas frecuentes. Se adapta a Windows o macOS. |
+| **Prueba** | Lo que hace el participante, **en 5 pasos numerados de arriba abajo**: ① código, ② abrir el sitio e iniciar sesión, ③ calibrar, ④ hacer las 3 tareas, ⑤ preparar el `.zip`. El paso que toca está resaltado en amarillo y cada paso hecho aparece con ✓. |
+| **Resultados (equipo)** | **🌐 Ver informe (con heatmaps)** de una sesión, **✏ Revisar tareas** (¿fue correcta?) y **👥 Análisis grupal**. |
 
 Arriba hay tres indicadores de color (verde = bien, amarillo = revisar,
 rojo = problema): **cámara**, **cara detectada** y **navegador** (si el
@@ -111,18 +116,23 @@ pantalla aparece una barra de desplazamiento.
 
 **Antes de la jornada (una vez):**
 
-1. Termina [`studies/ventana_amarilla.json`](studies/ventana_amarilla.json):
-   confirma las 3 tareas y cambia los selectores `#REEMPLAZAR-…` de los AOI
-   ([ver abajo](#-estudio-ventana-amarilla)). Mientras falte algo, la pestaña
-   **Sesión** lo muestra en amarillo.
+1. [`studies/ventana_amarilla.json`](studies/ventana_amarilla.json) ya trae
+   las 3 tareas de los diagramas de flujo y los AOI por **texto visible**
+   ([ver abajo](#-estudio-ventana-amarilla)).
 2. Practica con la página demo (`python main_app.py --estudios
    studies/ejemplos`) y después haz un **piloto completo con el sitio real en
-   Windows y en macOS**: revisa en el informe que los AOI se detectan.
+   Windows y en macOS** con una cuenta del equipo. Si el informe dice
+   *«AOI que el navegador nunca encontró»*, ajusta el `text`/`selector` de
+   ese AOI.
 3. Crea la carpeta de Google Drive (que los participantes sólo puedan
    **subir**, p. ej. un formulario de carga o una carpeta compartida sólo
    con el equipo) y la lista de códigos P01, P02… (uno por participante).
-4. Envía a cada participante: el proyecto en `.zip`, su código, el enlace de
-   Drive y una indicación: *«abre el prototipo y sigue la pestaña Guía»*.
+4. Genera el paquete para participantes:
+   `python tools/empaquetar_participante.py` → `dist/EyeTracking_ventana_amarilla_2026_<fecha>.zip`
+   (sólo la app, el estudio y un `LEEME.txt`; sin pruebas, ejemplos ni
+   código histórico, y con los permisos de ejecución de macOS ya puestos).
+   Envía ese `.zip`, el código del participante, el enlace de Drive y la
+   indicación: *«lee LEEME.txt y sigue la pestaña Guía»*.
 5. El navegador integrado se abre maximizado y sin zoom: no hay que
    pedirle nada al participante.
 
@@ -131,20 +141,19 @@ pantalla aparece una barra de desplazamiento.
 1. Siéntalo a ~60 cm de la pantalla, cámara a la altura de los ojos, cara bien
    iluminada **de frente** (nada de ventanas detrás). Sin gorras ni flequillo
    sobre los ojos. Anota si usa lentes (casilla *Usa lentes*).
-2. Pestaña **Sesión → 🌐 Abrir el sitio e iniciar sesión**. Se abre el
-   portal en una ventana del prototipo; el participante **inicia sesión con
-   su cuenta UDEM**. En la página de login no se registra nada. Cuando cargue
-   el portal, arriba dice *✓ Navegador conectado* (en verde).
-3. En **Preparación**: escribe el **código asignado** a ese participante
-   (P01, P02… según tu lista; la app no propone ninguno para que no se repitan
-   entre computadoras) y, si el estudio tiene grupos, elige el grupo. **No
-   escribas nombres.**
-4. Pulsa **🎯 Calibrar y verificar**. Explica: *«Mira cada punto que aparezca,
-   sin mover la cabeza»*. Al terminar se hace sola una **verificación** con
-   otros 5 puntos y se muestra el error en px y grados.
+2. Pestaña **Prueba**, paso ①: el **código asignado** (P01, P02… según tu
+   lista; la app no propone ninguno para que no se repitan entre
+   computadoras). **No escribas nombres.**
+3. Paso ②: **🌐 Abrir el sitio**. Se abre el portal en una ventana del
+   prototipo (siempre en la pantalla principal) y el participante **inicia
+   sesión con su cuenta UDEM**. En la página de login no se registra nada.
+   Cuando cargue el portal el paso se marca con ✓.
+4. Paso ③: **🎯 Calibrar**. Explica: *«Mira cada punto que aparezca, sin
+   mover la cabeza»*. Al terminar se hace sola una **verificación** con otros
+   5 puntos y se muestra el error en px y grados.
    * Error de verificación **< 250 px**: bien. **> 350 px**: repite
      (mejora la luz, ajusta la cámara/distancia).
-5. En **Sesión**: todo en verde → **▶ Iniciar sesión**.
+5. Paso ④: **▶ Empezar la prueba**.
 6. El participante lee y **acepta el consentimiento**. La ventana del
    facilitador se minimiza y aparece el **panel de tareas**.
 7. Para cada tarea el participante lee la instrucción y pulsa **Comenzar**
@@ -198,30 +207,36 @@ para otro sitio.
 
 [`studies/ventana_amarilla.json`](studies/ventana_amarilla.json) es el estudio
 real: *«Proyecto Iris: Optimización UX/UI y análisis biométrico aplicado a
-plataformas digitales.»*, con 3 tareas sobre el **Portal UDEM nuevo**
-(`https://portal.udem.edu/`). Ya está configurado el sitio; falta:
+plataformas digitales.»*, sobre **Ventana UDEM** (`https://portal.udem.edu/`).
+Cada estudiante inicia sesión **antes** de empezar, en `login.udem.edu`, donde
+**no se inyecta nada**. Las tareas siguen los diagramas de flujo del equipo:
 
-1. **Sitio (listo):** `url`, `start_url` y `bridge.hosts` apuntan a
-   `portal.udem.edu`. Cada estudiante inicia sesión en `login.udem.edu`, donde
-   **no se inyecta nada**. Si después de iniciar sesión el portal lleva a
-   **otro dominio** (p. ej. un sistema de registro aparte), al terminar la
-   sesión la app lo avisa en una *nota para el equipo*: agrégalo a
-   `bridge.hosts` para registrar también ahí.
-2. **Tareas (borrador):** registro de materias, puntaje TOEFL y alta/baja,
-   tomadas del estudio del portal anterior. Confírmalas con el equipo.
-3. **AOI (ROI):** no hace falta el HTML del sitio; el navegador integrado lee
-   la página en vivo. Entra al portal con una cuenta en Chrome y, para cada
-   elemento: clic derecho → *Inspeccionar* → clic derecho en
-   el código resaltado → *Copy → Copy selector*, y pégalo en lugar de
-   `#REEMPLAZAR-…`. Hay un AOI objetivo por tarea (`obj_t1…3`) y uno opcional
-   para la opción de menú que lleva a él (`menu_t1…3`). Si un id cambia en
-   cada visita, usa un selector más general (clase o atributo) o un `rect`.
-   Lo que esté dentro de un *iframe* no se puede medir por selector.
-4. **Consentimiento:** `consent_text` ya está redactado a partir de la carta
-   impresa (equipo, profesor, objetivo, protocolo remoto, datos, retiro y
-   riesgos). Versión `IRIS-3`: añade que entran con su cuenta UDEM, que en el
-   login no se registra nada y que los trámites son simulados. Es un complemento virtual de la carta firmada; si cambias el
-   texto, sube `consent_version` (queda registrada en cada sesión).
+| # | Tarea | Camino esperado (diagrama) | AOI que se miden |
+| :- | :--- | :--- | :--- |
+| 1 | **Acceso a Trayecto UDEM** | Home → ícono de cuadrícula 3×3 del encabezado → menú flotante de accesos directos → botón «Trayecto UDEM» (ícono «TU») → se abre la plataforma externa | `icono_cuadricula`, `menu_accesos`, **`obj_t1`** (botón Trayecto UDEM) |
+| 2 | **Búsqueda y acceso a la Encuesta Avanza** | Home → clic en el buscador → escribir «Encuesta Avanza» → seleccionar el enlace → cargan las preguntas | `buscador`, **`obj_t2`** (enlace en los resultados) |
+| 3 | **Consulta del panel «Mis Solicitudes»** | Home → scroll pasando por «Vida académica» y «Servicios escolares» → zona inferior → tabla «Mis Solicitudes» | `bloque_vida_academica`, `bloque_servicios_escolares`, **`obj_t3`** (panel) |
+
+Más `encabezado`, `contenido` y `buscador`, que valen para todas las tareas.
+Cada tarea arranca en la página de inicio, tiene 3 min de límite y termina
+cuando el participante pulsa «Terminé» (las instrucciones no revelan el
+camino; la de la encuesta pide no contestarla).
+
+* **AOI por texto:** como sin cuenta no se puede ver el HTML del portal, los
+  AOI se buscan por su **texto visible** (`"text": "Mis Solicitudes"`) o por
+  su `aria-label`/`placeholder` (el ícono de cuadrícula y el buscador). El
+  `selector` que acompaña al texto dice a qué contenedor subir (p. ej. la
+  tarjeta completa de «Mis Solicitudes», no sólo su título). **En el piloto**
+  revisa el informe: si dice *«AOI que el navegador nunca encontró»*, ajusta
+  ese AOI (lo más probable: el `aria-label` del ícono de cuadrícula).
+* **Otros dominios:** Trayecto UDEM y la encuesta pueden abrirse en otro
+  dominio. Ahí no se inyecta nada; sólo se anota **el nombre del dominio**
+  (aparece en el informe como *«Sitios tarea N»*, útil para confirmar que
+  llegó). Si quieres medir AOI dentro de ellos, agrega el dominio a
+  `bridge.hosts` (la *nota para el equipo* al final del piloto te lo dice).
+* **Consentimiento:** versión `IRIS-5`, actualizada para las tareas nuevas y las imágenes de la página
+  (sin contestar la encuesta ni hacer trámites; de otros sitios sólo se
+  registra el dominio). Si cambias el texto, sube `consent_version`.
 
 Ya viene configurado para pruebas remotas: sin capturas de pantalla (no pide
 el permiso de *Grabación de pantalla*), sin revisión al final (el equipo
@@ -253,12 +268,29 @@ precisión.
 }
 ```
 
-**Cómo se define un AOI** (una de dos formas):
+**Cómo se define un AOI** (una de estas formas):
 
 | Forma | Cuándo usarla |
 | :--- | :--- |
+| `"text": "Mis Solicitudes"` | **La más fácil:** el texto visible del elemento (o su `aria-label`, `title`, `placeholder`). Sin importar mayúsculas ni acentos; una lista `["Apps", "Accesos"]` vale si aparece cualquiera. Con `"selector"` a la vez, se sube desde ese texto al contenedor más cercano que lo cumpla (`"selector": "section, [class*='card' i]"` = toda la tarjeta). No hace falta ver el HTML. |
 | `"selector": "nav"` | **Recomendada.** Selector CSS. El navegador mide el elemento real (con scroll, cambios de tamaño, menús desplegables…). Requiere el [script del navegador](#-script-del-navegador-tampermonkey). Para encontrar el selector: clic derecho sobre el elemento → *Inspeccionar* → clic derecho en el nodo → *Copiar → Copiar selector*. |
+| `"opens": "Trayecto UDEM"` | El **botón que abre el menú** donde aparece ese texto: para íconos sin texto (como la cuadrícula 3×3). |
 | `"rect": [x, y, ancho, alto]` | Rectángulo manual. Con `"space": "viewport"` (por defecto) son píxeles de pantalla a 1920×1080 (se escalan solos) y sólo sirve si la página **no se desplaza**. Con `"space": "page"` son píxeles CSS de la página completa (necesita el script). |
+
+**Flujo esperado de una tarea** (`"flow"`, opcional): la lista de pasos del
+diagrama de flujo. Cada paso usa UNA clave; se busca cada uno después del
+anterior y el informe dice cuáles hizo y en qué segundo.
+
+| Paso | Se cumple cuando… |
+| :--- | :--- |
+| `{"click": "aoi"}` | hace clic sobre ese AOI (o sobre su texto) |
+| `{"visible": "aoi"}` | el AOI aparece (p. ej. se abre un menú o salen resultados) |
+| `{"scroll_to": "aoi"}` | baja la página hasta tenerlo en pantalla |
+| `{"look": "aoi"}` | fija la mirada en él |
+| `{"navigate": true}` | se carga otra página |
+| `{"leave_site": true}` | se abre un sitio de otro dominio (p. ej. Trayecto UDEM) |
+
+Cada paso lleva además `"id"` y `"label"` (el texto que sale en el informe).
 
 * `"tasks": [1, 3]` limita un AOI a esas tareas (sin esto vale para todas).
 * `"url_contains"` limita un AOI a las URL que contengan ese texto (útil en sitios con varias páginas).
@@ -291,11 +323,12 @@ hace el propio prototipo:
    inyecta el mismo [`web/eyetracking_bridge.user.js`](web/eyetracking_bridge.user.js)
    de siempre: lee el scroll, el tamaño de la ventana, la posición de los
    AOI, los clics (sólo etiqueta, id, clase y los primeros 60 caracteres del
-   texto) y la navegación. Las peticiones al puente local (`127.0.0.1:4243`)
-   las hace el prototipo, no la página, así que el navegador no bloquea ni
-   pregunta nada.
+   texto) y la navegación. Los datos pasan del navegador a la app por el
+   stdin/stdout del proceso, **sin red ni puertos**: el navegador no bloquea
+   ni pregunta nada y el firewall/antivirus no ve ningún servidor.
 3. En **cualquier otro dominio** —incluida la página de inicio de sesión—
-   **no se inyecta nada**: la contraseña nunca pasa cerca del prototipo.
+   **no se inyecta nada**: la contraseña nunca pasa cerca del prototipo. De
+   esos dominios sólo se anota el nombre (p. ej. que se llegó a Trayecto UDEM).
 4. La posición exacta del área de contenido en la pantalla se mide con el
    ratón, como hace Firefox (`mozInnerScreenX/Y`): la mirada se sitúa en la
    página sin estimar el alto de la barra de título.
@@ -356,9 +389,11 @@ P01_20261003_101500.csv            mirada muestra a muestra (ver columnas abajo)
 P01_20261003_101500.meta.json      participante, consentimiento, equipo, calibración,
                                    verificaciones, tareas, calidad
 P01_20261003_101500.web.json       eventos del navegador (scroll, AOI, clics, páginas)
-P01_20261003_101500_shots/         captura de pantalla al inicio de cada tarea
-P01_20261003_101500_informe.txt    informe de la sesión
-P01_20261003_101500_tarea1_density.png  _dwell.png  _scanpath.png  _pagina.png  (por tarea)
+P01_20261003_101500_shots/         imágenes de la página que vio en cada tarea (t1_001.jpg…)
+P01_20261003_101500_informe.html   ⭐ informe para leer: calidad, pasos del flujo e imágenes
+P01_20261003_101500_informe.txt    lo mismo en texto
+P01_20261003_101500_tarea1_vista1_calor.png      mapa de calor sobre la página que vio
+P01_20261003_101500_tarea1_vista1_recorrido.png  orden de la mirada sobre esa página
 ```
 
 **📦 Preparar archivo para enviar** comprime todo lo anterior en
@@ -374,7 +409,8 @@ El análisis grupal escribe en `resultados/<id_del_estudio>/`:
 | `tareas.csv` | Una fila por participante × tarea (todas las métricas de tarea). |
 | `aoi.csv` | Una fila por participante × tarea × AOI. |
 | `resumen_tareas.csv` / `resumen_aoi.csv` | Media, DE y mediana por tarea/AOI, para todo el grupo y por grupo (comparación entre condiciones). |
-| `heatmap_tareaN_dwell.png` / `_densidad.png` / `_pagina.png` / `aoi_tareaN.png` | Mapas **grupales** (cada participante pesa igual) y % de participantes que vio cada AOI. |
+| `resumen_flujo.csv` | Por tarea y paso del flujo esperado: % de participantes que lo hizo y en qué segundo (mediana). `tareas.csv` trae los pasos de cada participante. |
+| `heatmap_tareaN_vistaK_grupo.png` | Mapa de calor **de todo el grupo sobre la página real** (cada participante pesa igual). Sin capturas: `heatmap_tareaN_dwell.png` / `_densidad.png` / `_pagina.png` sobre fondo blanco. |
 
 Los CSV usan UTF-8 con BOM y encabezados en español: se abren directamente en
 **Excel**, y se importan sin cambios a **SPSS / R / pandas**.
@@ -399,12 +435,19 @@ error y falta de datos del navegador.
 
 ## 🔒 Privacidad y ética
 
-* **No se graba video ni fotos.** La cámara sólo alimenta el cálculo de la
-  mirada en tiempo real.
+* **No se graba video ni fotos de la persona.** La cámara sólo alimenta el
+  cálculo de la mirada en tiempo real.
+* **Imágenes de la página (`page_capture`):** el navegador integrado guarda
+  imágenes **sólo del contenido de la ventana del sitio**, durante las
+  tareas y en los dominios del estudio (nunca el login, el escritorio u
+  otras ventanas). Sirven de fondo para los heatmaps. Como el portal muestra
+  datos personales, lo dice el consentimiento (`IRIS-5`) y **no deben
+  publicarse**: para presentaciones usa capturas de una cuenta del equipo.
+  Se desactiva con `"page_capture": false`.
 * **Cuenta del estudiante:** inicia sesión él mismo en el navegador
   integrado. En la página de login no se inyecta ni se registra nada; al
-  terminar, la ventana se cierra y la sesión se borra. Las capturas de
-  pantalla están desactivadas porque el portal muestra datos personales.
+  terminar, la ventana se cierra y la sesión se borra. La captura de la
+  pantalla completa del sistema (`capture_screenshots`) está desactivada.
 * **Nada que instalar en el navegador personal** (sin extensiones con acceso
   a todas las páginas). El prototipo vive en su carpeta: para quitarlo,
   basta con borrarla.
@@ -433,6 +476,14 @@ resultados:
 * Por eso los AOI deben ser **bloques grandes** (menú, banner, tarjeta,
   formulario), **no palabras ni iconos pequeños**. El informe marca con ⚠ los
   AOI menores que el doble del error.
+* **Corrección por clics (automática).** Si el participante se acomoda
+  distinto después de calibrar, la mirada queda desplazada de forma casi
+  constante. Al hacer clic la persona mira lo que pulsa, así que el
+  análisis usa los clics para estimar ese desplazamiento y restarlo (como
+  WebGazer). Sólo se aplica con ≥ 3 clics y si reduce el error; el
+  informe dice cuánto se corrigió. En el piloto real bajó el error en los
+  clics de 457 a 153 px. Se desactiva con
+  `"analysis": {"click_correction": false}`.
 * **Las conclusiones son a nivel de grupo.** Un solo participante con error
   alto no sirve; la app lo excluye con las reglas de calidad.
 * La precisión **empeora si el participante se mueve mucho**, con mala luz,
@@ -486,7 +537,7 @@ et_suite/
   filters.py · pupillometry.py Filtro 1€ · I-DT/I-VT, detector de parpadeos
   study.py                     Carga y validación del estudio (JSON)
   display.py                   px ↔ grados; pantalla → coordenadas de página
-  web_bridge.py                Servidor local 127.0.0.1:4243 (eventos del navegador)
+  web_bridge.py                Puente de eventos del navegador (sin red; HTTP en 127.0.0.1 sólo para la demo)
   navegador.py                 Navegador integrado (pywebview): abre el sitio e inyecta el script
   data_logger.py               CSV en segundo plano, alineado con tarea y scroll
   session_meta.py              .meta.json: participante, consentimiento, calidad
@@ -494,11 +545,9 @@ et_suite/
   report.py · heatmap_generator.py   Informe y mapas de calor
   group_analysis.py            Análisis de todo el grupo (CSV + mapas + resumen)
   screenshots.py               Captura de pantalla (screencapture / ImageGrab)
-  experiment_server.py         Servidor TCP para OpenSesame (no se usa en la app;
-                               queda para quien quiera integrarlo)
 
 tests/ · validacion.py · synth_gaze.py   Pruebas y simulador cabeza-ojo-pantalla
-tools/                         Diagnósticos con cámara real
+tools/                         Diagnósticos con cámara real y empaquetar_participante.py (.zip para enviar)
 legacy/                        Código histórico (no se usa)
 ```
 
@@ -526,12 +575,12 @@ panel de tareas ───────────┘   └── navegador (scro
 | La línea «Navegador» no se pone verde | Pulsa **🌐 Abrir el sitio e iniciar sesión** e inicia sesión: en el login no se registra nada a propósito. Si ya entraste y sigue amarilla, el portal te llevó a un dominio que no está en `bridge.hosts`. |
 | La ventana del sitio no se abre (Windows) | Instala *Microsoft Edge WebView2 Runtime* (gratis, de Microsoft) y vuelve a intentarlo. |
 | Al terminar aparece una «nota para el equipo» con otro dominio | El portal usó otro dominio durante las tareas: agrégalo a `bridge.hosts` en el JSON del estudio. |
-| Un AOI por selector sale «no visto» siempre | El selector no coincide: pruébalo en la consola del navegador con `document.querySelector("…")`. |
-| No me deja iniciar la sesión | Mira la lista de la pestaña **Sesión**: lo que está en rojo bloquea (calibrar a *este* participante, código válido, grupo, cámara). |
+| Un AOI sale «no visto» siempre / el informe dice «AOI que el navegador nunca encontró» | El `text` o `selector` no coincide con la página: revisa el texto exacto o el `aria-label` del elemento (clic derecho → *Inspeccionar*). |
+| No me deja empezar la prueba | En la pestaña **Prueba**, el paso sin ✓ (en rojo o amarillo) dice qué falta (calibrar a *este* participante, código válido, grupo, cámara). |
 | La calibración sale mala (> 300 px) | Mejora la luz frontal, acerca/alinea la cámara con los ojos, que se vea la cara en el indicador verde y **repite**. |
 | Verificación alta (> 350 px) | Repite la calibración; si persiste, revisa lentes con reflejos y distancia (~60 cm). |
 | Sesión «excluida» | Abre el informe: el motivo está al principio. Puedes forzar su inclusión en el análisis con la casilla *Incluir sesiones excluidas*. |
-| «Puerto 4243 ocupado» | Hay otra copia de la app abierta; ciérrala. |
+| «Puerto 4243 ocupado» (sólo con la página demo) | Hay otra copia de la app abierta; ciérrala. |
 | Va a saltos / pocos FPS | Elige `Auto (recomendado)`; si la cámara da < 12 FPS usa otra o más luz. |
 | Los heatmaps salen con fondo blanco | No hay captura: en macOS falta el permiso de *Grabación de pantalla*; también puedes poner una imagen en `background` de la tarea. |
 | El CSV sale vacío | La sesión duró < 1 s o no se detectó el rostro. |

@@ -26,6 +26,13 @@ Protocolo (JSON):
 El script es opcional: sin él, el prototipo sigue funcionando y las métricas
 por AOI usan rectángulos manuales en coordenadas de pantalla.
 
+Modo sin red (``start(listen=False)``, el normal con el navegador
+integrado): NO se abre ningún puerto.  El navegador integrado entrega los
+eventos por su propio canal (stdin/stdout del proceso, ver ``navegador.py``)
+con ``receive_raw``, así que ni el firewall ni el antivirus ven un servidor.
+El servidor HTTP sólo hace falta para páginas propias servidas en
+``127.0.0.1`` (la página de prueba) o para Tampermonkey.
+
 Seguridad: escucha sólo en 127.0.0.1.  Acepta cualquier origen (CORS *)
 porque el navegador del participante necesita llamarlo desde el sitio
 evaluado; en un laboratorio controlado el riesgo es nulo.
@@ -43,7 +50,7 @@ from typing import Callable, Dict, Optional
 from urllib.parse import parse_qs, urlparse
 
 MAX_BODY = 256 * 1024     # 256 KB por evento
-VALID_KINDS = ("vp", "layout", "click", "nav", "vis")
+VALID_KINDS = ("vp", "layout", "click", "nav", "vis", "shot")
 
 
 class _Server(ThreadingHTTPServer):
@@ -87,6 +94,7 @@ class WebBridge:
         self.port = port
         self._httpd: Optional[ThreadingHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
+        self._local = False                         # modo sin red
         self.n_events = 0
         self.last_event_t: Optional[float] = None     # perf_counter (s)
         self.last_error: Optional[str] = None
@@ -95,11 +103,24 @@ class WebBridge:
 
     @property
     def is_running(self) -> bool:
+        return self._httpd is not None or self._local
+
+    @property
+    def listening(self) -> bool:
+        """True si hay un servidor HTTP escuchando en ``127.0.0.1``."""
         return self._httpd is not None
 
-    def start(self) -> bool:
-        """Arranca el servidor.  Devuelve False (y guarda el motivo) si falla."""
+    def start(self, listen: bool = True) -> bool:
+        """
+        Arranca el puente.  Con ``listen=False`` no abre ningún puerto: los
+        eventos llegan sólo por ``receive_raw``.  Devuelve False (y guarda
+        el motivo) si falla.
+        """
         if self._httpd is not None:
+            return True
+        if not listen:
+            self._local = True
+            self.last_error = None
             return True
         bridge = self
 
@@ -145,22 +166,13 @@ class WebBridge:
                 self.end_headers()
                 self.wfile.write(body)
 
-            def _ack(self) -> dict:
-                cfg = bridge._safe_config()
-                return {"ok": True, "rec": bool(cfg.get("rec")),
-                        "task": cfg.get("task", 0)}
-
             def _handle_event(self, raw: bytes) -> None:
                 try:
-                    d = json.loads(raw.decode("utf-8"))
-                    kind = str(d.get("k", ""))
-                    if kind not in VALID_KINDS:
-                        raise ValueError(f"tipo desconocido: {kind!r}")
+                    ack = bridge.receive_raw(raw.decode("utf-8"))
                 except (ValueError, UnicodeDecodeError) as e:
                     self._json({"ok": False, "error": str(e)}, 400)
                     return
-                bridge._receive(kind, d)
-                self._json(self._ack())
+                self._json(ack)
 
             # ── métodos ──
             def do_OPTIONS(self) -> None:         # preflight CORS / PNA
@@ -220,6 +232,7 @@ class WebBridge:
         return True
 
     def stop(self) -> None:
+        self._local = False
         httpd, self._httpd = self._httpd, None
         if httpd is not None:
             try:
@@ -230,6 +243,30 @@ class WebBridge:
         if self._thread:
             self._thread.join(timeout=2.0)
             self._thread = None
+
+    # ── eventos ──────────────────────────────────────────────────────────
+
+    def ack(self) -> dict:
+        """Respuesta a un evento: estado de grabación y tarea actual."""
+        cfg = self._safe_config()
+        return {"ok": True, "rec": bool(cfg.get("rec")),
+                "task": cfg.get("task", 0)}
+
+    def receive_raw(self, raw: str) -> dict:
+        """
+        Registra un evento (JSON en texto) del script del navegador y
+        devuelve el acuse.  Lanza ``ValueError`` si el evento es inválido.
+        """
+        if len(raw) > MAX_BODY:
+            raise ValueError("evento demasiado grande")
+        d = json.loads(raw)
+        if not isinstance(d, dict):
+            raise ValueError("se esperaba un objeto JSON")
+        kind = str(d.get("k", ""))
+        if kind not in VALID_KINDS:
+            raise ValueError(f"tipo desconocido: {kind!r}")
+        self._receive(kind, d)
+        return self.ack()
 
     # ── internos ─────────────────────────────────────────────────────────
 

@@ -116,14 +116,106 @@
     return false;
   }
 
+  // ── AOI por texto visible ("text" en el estudio) ────────────────────────
+  // Sin mayúsculas ni acentos y con los espacios normalizados.
+  function norm(s) {
+    s = String(s || '').toLowerCase();
+    if (s.normalize) s = s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+    return s.replace(/\s+/g, ' ').trim();
+  }
+
+  function visible(el) {
+    var r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    var st = getComputedStyle(el);
+    return st.visibility !== 'hidden' && st.display !== 'none';
+  }
+
+  // Elemento cuyo texto (o aria-label / title / placeholder) contiene
+  // ``a.text`` (o cualquiera de sus textos, si es una lista).  Con ``a.selector`` sube al contenedor más cercano que lo
+  // cumpla.  Prefiere uno visible; entre varios, el más pequeño (el más
+  // específico).
+  function findByText(a) {
+    var needles = [].concat(a.text).map(norm).filter(Boolean);
+    if (!needles.length || !document.body) return null;
+    function has(s) {
+      s = norm(s);
+      for (var k = 0; k < needles.length; k++) if (s.indexOf(needles[k]) >= 0) return true;
+      return false;
+    }
+    var found = [];
+    function add(el) {
+      if (!el || el.nodeType !== 1) return;
+      if (a.selector) {
+        try { el = el.closest(a.selector); } catch (e) { el = null; }
+        if (!el) return;
+      }
+      if (found.indexOf(el) < 0) found.push(el);
+    }
+    // 1) nodos de texto (no fuerza el cálculo del diseño de toda la página)
+    var tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+    for (var n = tw.nextNode(); n && found.length < 50; n = tw.nextNode()) {
+      if (has(n.nodeValue)) add(n.parentElement);
+    }
+    // 2) atributos (iconos sin texto, buscadores)
+    var attrs = document.querySelectorAll('[aria-label],[title],[placeholder],[alt]');
+    for (var i = 0; i < attrs.length && found.length < 50; i++) {
+      var el = attrs[i];
+      if (has([el.getAttribute('aria-label'), el.getAttribute('title'),
+               el.getAttribute('placeholder'), el.getAttribute('alt')].join(' '))) add(el);
+    }
+    // 3) texto partido en varias etiquetas («Mis <b>Solicitudes</b>»)
+    if (!found.length) {
+      var cand = document.querySelectorAll('a,button,[role=button],[role=tab],[role=menuitem],h1,h2,h3,h4,h5,h6,label,li,th,td,p');
+      for (var j = 0; j < cand.length && found.length < 50; j++) {
+        if (has(cand[j].textContent)) add(cand[j]);
+      }
+    }
+    var best = null, bestVis = false, bestArea = Infinity;
+    found.forEach(function (el) {
+      var r = el.getBoundingClientRect();
+      var v = visible(el), area = r.width * r.height;
+      if ((v && !bestVis) || (v === bestVis && area < bestArea)) {
+        best = el; bestVis = v; bestArea = area;
+      }
+    });
+    return best;
+  }
+
+  // Botón que ABRE el menú donde aparece ``texto`` (p. ej. el ícono de
+  // cuadrícula que despliega «Trayecto UDEM»): se sube desde el texto hasta
+  // un antepasado que contenga un conmutador (aria-expanded, aria-haspopup,
+  // data-toggle…) que no sea parte del propio menú.
+  var TOGGLE = '[aria-expanded],[aria-haspopup],[data-toggle],[data-bs-toggle],' +
+               '[uib-dropdown-toggle],.dropdown-toggle';
+  function findOpener(texto) {
+    var item = findByText({ text: texto });
+    if (!item) return null;
+    for (var n = item.parentElement; n && n !== document.body; n = n.parentElement) {
+      var cands = n.querySelectorAll(TOGGLE);
+      for (var i = 0; i < cands.length; i++) {
+        var c = cands[i];
+        if (c.contains(item) || c === item) continue;
+        if (has_text(c, texto)) continue;
+        return c;
+      }
+    }
+    return null;
+  }
+  function has_text(el, texto) {
+    return norm(el.textContent).indexOf(norm(texto)) >= 0;
+  }
+
   function measure() {
     var out = [];
     var sx = window.pageXOffset || 0, sy = window.pageYOffset || 0;
     cfg.aois.forEach(function (a) {
-      if (!a.selector) return;
+      if (!a.selector && !a.text && !a.opens) return;
       if (a.url_contains && location.href.indexOf(a.url_contains) < 0) return;
       var el = null;
-      try { el = document.querySelector(a.selector); } catch (e) { return; }
+      if (a.opens) el = findOpener(a.opens);
+      else if (a.text) el = findByText(a);
+      else { try { el = document.querySelector(a.selector); } catch (e) { return; } }
       if (!el) return;
       var r = el.getBoundingClientRect();
       var st = getComputedStyle(el);
@@ -171,7 +263,11 @@
     };
   }
 
-  document.addEventListener('click', function (e) {
+  // «pointerdown» en window y en fase de captura: es lo PRIMERO que recibe
+  // la página, así que ningún menú o widget puede ocultarnos el clic (antes,
+  // con «click» en document, el portal se lo quedaba al abrir menús).
+  window.addEventListener('pointerdown', function (e) {
+    if (!e.isPrimary || (e.button !== undefined && e.button !== 0)) return;
     var d = describe(e.target);
     d.k = 'click';
     d.x = e.clientX; d.y = e.clientY;

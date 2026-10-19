@@ -212,7 +212,8 @@ def _write_tables(study: Study, analyses: List[Analysis],
             "recorrido_px", "clics", "primer_clic_s", "paginas",
             "cargas_pagina", "parpadeos", "aoi_objetivo", "objetivo_visto",
             "ttff_objetivo_ms", "dwell_objetivo_ms", "primera_aoi",
-            "transiciones_aoi", "secuencia_aoi", "notas"]
+            "transiciones_aoi", "secuencia_aoi", "pasos_flujo_hechos",
+            "pasos_flujo_total", "flujo_completo", "pasos_flujo", "notas"]
     rows = []
     for a in analyses:
         for t in a.metrics["tasks"]:
@@ -229,7 +230,14 @@ def _write_tables(study: Study, analyses: List[Analysis],
                 "" if t["target_seen"] is None else int(t["target_seen"]),
                 _r(t["target_ttff_ms"], 0), _r(t["target_dwell_ms"], 0),
                 t["first_aoi"] or "", t["aoi_transitions"],
-                " > ".join(t["aoi_sequence"]), t.get("notes", "")])
+                " > ".join(t["aoi_sequence"]),
+                t.get("flow_done", ""), t.get("flow_total", ""),
+                "" if t.get("flow_complete") is None
+                else int(t["flow_complete"]),
+                " | ".join(f"{'+' if p['done'] else '-'}{p['id']}"
+                           + (f"@{p['t_s']:.1f}s" if p["done"] else "")
+                           for p in t.get("flow") or []),
+                t.get("notes", "")])
     files.append(_write_csv(os.path.join(out_dir, "tareas.csv"), head, rows))
 
     # ── aoi.csv ──────────────────────────────────────────────────────────
@@ -283,6 +291,27 @@ def _write_tables(study: Study, analyses: List[Analysis],
                    / len(seen)) if seen else "",
                 _r(tt["mean"], 0), _r(tt["sd"], 0), _r(tt["median"], 0)])
     files.append(_write_csv(os.path.join(out_dir, "resumen_tareas.csv"),
+                            head, rows))
+
+    # ── resumen_flujo.csv: % de participantes que hizo cada paso ──────
+    head = ["grupo", "tarea", "titulo", "paso", "descripcion",
+            "n_participantes", "n_hizo", "pct_hizo", "segundo_mediana"]
+    rows = []
+    for g in groups:
+        sel = _select(used, g)
+        for tid in task_ids:
+            ts = [t for a in sel for t in a.metrics["tasks"]
+                  if t["task"] == tid and t["started"] and t.get("flow")]
+            if not ts:
+                continue
+            for i, paso in enumerate(ts[0]["flow"]):
+                hechos = [t["flow"][i] for t in ts
+                          if i < len(t["flow"]) and t["flow"][i]["done"]]
+                med = describe([p["t_s"] for p in hechos])["median"]
+                rows.append([g, tid, ts[0]["title"], i + 1, paso["label"],
+                             len(ts), len(hechos),
+                             _r(100.0 * len(hechos) / len(ts)), _r(med)])
+    files.append(_write_csv(os.path.join(out_dir, "resumen_flujo.csv"),
                             head, rows))
 
     # ── resumen_aoi.csv ──────────────────────────────────────────────────
@@ -396,6 +425,19 @@ def _summary_text(study: Study, analyses: List[Analysis],
             if ck["n"]:
                 L.append(f"    Clics           : media {_fm(ck['mean'])} "
                          f"· DE {_fm(ck['sd'])}")
+            con_flujo = [t for t in ts if t.get("flow")]
+            if con_flujo:
+                n_c = sum(1 for t in con_flujo if t["flow_complete"])
+                L.append(f"    Camino esperado : completo en {n_c}/"
+                         f"{len(con_flujo)} participantes")
+                for i, paso in enumerate(con_flujo[0]["flow"]):
+                    hechos = [t["flow"][i] for t in con_flujo
+                              if i < len(t["flow"]) and t["flow"][i]["done"]]
+                    med = describe([p["t_s"] for p in hechos])["median"]
+                    L.append(f"      {i + 1}. {paso['label'][:44]:<44} "
+                             f"{100.0 * len(hechos) / len(con_flujo):4.0f} %"
+                             + (f" · mediana {med:.1f} s" if med is not None
+                                else ""))
             aoi_rows = []
             for aoi in study.aois_for_task(tid):
                 xs = [x for a in sel for x in a.metrics["aois"]
@@ -454,6 +496,14 @@ def _group_images(study: Study, used: List[Analysis], task_ids: List[int],
                   for f in a.fixes_for_task(tid)] for a in used]
         per_p_raw = [a.fixes_for_task(tid) for a in used]
         if not any(per_p):
+            continue
+
+        # Con capturas del navegador: el mapa del grupo sobre la página real
+        vistas = gen.group_page_views(
+            used, tid, out_dir,
+            f"Tarea {tid}: {tdef.title}" if tdef else f"Tarea {tid}")
+        if vistas:
+            files += vistas
             continue
 
         # Fondo: el del estudio, o la captura de la primera sesión que la tenga

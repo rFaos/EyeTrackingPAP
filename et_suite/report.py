@@ -153,6 +153,15 @@ def _build(an: Analysis, n_first: int) -> str:
     if sm["panel_fix_ms"] > 0:
         L.append(f"  Tiempo en el panel de tareas (excluido del análisis): "
                  f"{sm['panel_fix_ms'] / 1000:.1f} s")
+    cc = sm.get("click_correction") or {}
+    if cc.get("applied"):
+        L.append(f"  Corrección por clics    : mirada desplazada "
+                 f"({cc['dx']:+.0f}, {cc['dy']:+.0f}) px; error en los clics "
+                 f"{cc['err_before_px']:.0f} → {cc['err_after_px']:.0f} px "
+                 f"({cc['n']} clics)")
+    elif cc.get("n"):
+        L.append(f"  Corrección por clics    : no aplicada ({cc['n']} clics; "
+                 "no mejoraba o eran pocos)")
     if sm["n_web_events"]:
         L.append(f"  Eventos del navegador   : {sm['n_web_events']:8d}"
                  "   (scroll, clics, páginas)")
@@ -178,6 +187,17 @@ def _build(an: Analysis, n_first: int) -> str:
                      f"{_fmt(t['n_clicks'], '{:d}'):>7}"
                      f"{_fmt(t['n_pages'], '{:d}'):>6}{tt:>17}")
         L.append("")
+        for t in tasks:
+            if t.get("flow"):
+                L.append(f"  Flujo tarea {t['task']}: {t['flow_done']}/"
+                         f"{t['flow_total']} pasos del camino esperado")
+                for i, p in enumerate(t["flow"], start=1):
+                    estado = (f"✓ {p['t_s']:5.1f} s" if p["done"]
+                              else "✗ no lo hizo")
+                    L.append(f"     {i}. {p['label']:<48} {estado}")
+        for t in tasks:
+            if len(t.get("hosts") or []) > 1:
+                L.append(f"  Sitios tarea {t['task']}: {', '.join(t['hosts'])}")
         for t in tasks:
             if t.get("notes"):
                 L.append(f"  Nota tarea {t['task']}: {t['notes']}")
@@ -306,6 +326,10 @@ def _write(txt: str, csv_path: str, output: Optional[str]) -> None:
     try:
         with open(path, "w", encoding="utf-8") as f:
             f.write(txt)
-        print(f"[report] Informe guardado → {path}")
     except Exception as e:
         print(f"[report] No se pudo guardar el informe: {e}")
+        return
+    try:                       # consola cp1252 de Windows: «→» no siempre cabe
+        print(f"[report] Informe guardado → {path}")
+    except UnicodeEncodeError:
+        print(f"[report] Informe guardado: {path}")

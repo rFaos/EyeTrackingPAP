@@ -6,11 +6,12 @@ tareas definidas en un estudio (``studies/*.json``) mientras la cámara web
 estima hacia dónde mira.  Al terminar se obtienen métricas por tarea y por
 elemento de la página, informes y mapas de calor, y un análisis del grupo.
 
-Tres pestañas:
-  • Preparación : estudio, participante, cámara y calibración (+ verificación).
-  • Sesión      : lista de comprobaciones, inicio/fin y estado en vivo.
-  • Análisis    : informe y mapas de una sesión, revisión de tareas y análisis
-                  grupal con todos los participantes.
+Pestañas:
+  • Guía        : pasos, permisos y problemas frecuentes.
+  • Prueba      : los 5 pasos del participante en orden (código, sitio,
+                  calibración, tareas y envío).
+  • Resultados  : informe HTML con heatmaps sobre lo que vio cada
+                  participante, revisión de tareas y análisis grupal.
 
 Durante la sesión el participante ve sólo el navegador integrado (una
 ventana propia del prototipo con el sitio del estudio; no hace falta Chrome
@@ -54,6 +55,7 @@ from et_suite.heatmap_generator import HeatmapGenerator
 from et_suite.metrics import analyze_csv
 from et_suite.navegador import NavegadorIntegrado
 from et_suite.report import session_report
+from et_suite.report_html import write_html
 from et_suite.screenshots import capture_screen
 from et_suite.session_meta import (environment_info, find_sessions, load_meta,
                                    new_meta, now_iso,
@@ -245,8 +247,14 @@ class TaskPanel:
     def _place_window(self) -> None:
         pos = self.study.task_panel_position
         w = 560 if pos == "bottom-right" else min(900, SCREEN_W - 80)
-        h = 190 if pos == "bottom-right" else 150
         self._instr.config(wraplength=w - 40)
+        self._timer.config(wraplength=w - 40, justify="left")
+        # Alto según el contenido: con instrucciones de 2–3 líneas o con el
+        # escalado de pantalla de Windows (125–150 %) un alto fijo dejaba
+        # los botones fuera de la ventana y el participante no veía
+        # «Comenzar».
+        self.win.update_idletasks()
+        h = max(self.win.winfo_reqheight(), 120)
         if pos == "top":
             x, y = (SCREEN_W - w) // 2, 40
         elif pos == "bottom-right":
@@ -276,10 +284,13 @@ class TaskPanel:
         self._instr.config(text=task.instruction)
         lim = (f"  Tiempo máximo: {int(task.time_limit_s)} s."
                if task.time_limit_s else "")
-        self._timer.config(text="Cuando estés listo/a, pulsa «Comenzar»."
-                           + lim, fg=FG2)
+        self._timer.config(text="Lee la tarea y, cuando estés listo/a, pulsa "
+                           "«Comenzar tarea»: el sitio vuelve a la página de "
+                           "inicio y empieza a contar el tiempo." + lim,
+                           fg=FG2)
         self.btn_begin.configure(state="normal", text="▶  Comenzar tarea")
         self._buttons(self.btn_begin)
+        self._place_window()
 
     def show_loading(self) -> None:
         self.btn_begin.configure(state="disabled", text="Abriendo el sitio…")
@@ -288,6 +299,7 @@ class TaskPanel:
     def show_running(self) -> None:
         self._timer.config(text="", fg=FG2)
         self._buttons(self.btn_done, self.btn_giveup)
+        self._place_window()
 
     def set_timer(self, elapsed_s: float, limit_s: Optional[float]) -> None:
         if limit_s:
@@ -571,18 +583,15 @@ class App:
         self.nb = ttk.Notebook(self.root)
         self.nb.pack(fill="both", expand=True, padx=8, pady=(4, 8))
         self.tab_guide = tk.Frame(self.nb, bg=BG)
-        self.tab_prep = tk.Frame(self.nb, bg=BG)
-        self.tab_sess = tk.Frame(self.nb, bg=BG)
+        self.tab_test = tk.Frame(self.nb, bg=BG)
         self.tab_ana = tk.Frame(self.nb, bg=BG)
         self.nb.add(self.tab_guide, text="Guía")
-        self.nb.add(self.tab_prep, text="1 · Preparación")
-        self.nb.add(self.tab_sess, text="2 · Sesión")
-        self.nb.add(self.tab_ana, text="3 · Resultados")
+        self.nb.add(self.tab_test, text="Prueba")
+        self.nb.add(self.tab_ana, text="Resultados (equipo)")
 
         self._scrollers: Dict[str, Tuple[tk.Canvas, tk.Scrollbar]] = {}
         self._build_guide(self.tab_guide)
-        self._build_prep(self._scroll_area(self.tab_prep))
-        self._build_session(self._scroll_area(self.tab_sess))
+        self._build_test(self._scroll_area(self.tab_test))
         self._build_analysis(self._scroll_area(self.tab_ana))
         self.root.bind_all("<MouseWheel>", self._on_wheel, add="+")
 
@@ -697,23 +706,46 @@ class App:
         head.bind("<Button-1>", toggle)
         return body
 
-    # ── Pestaña 1 · Preparación ─────────────────────────────────────────
+    # ── Pestaña «Prueba»: los 5 pasos en orden ─────────────────────────
 
-    def _build_prep(self, tab: tk.Frame) -> None:
-        g = self._group(tab, "Estudio")
-        self._lbl_study_name = tk.Label(g, text="", fg=FG, bg=CARD,
-                                        font=(UI, 11, "bold"), anchor="w",
-                                        justify="left", wraplength=580)
+    def _step(self, parent, n: int, title: str, hint: str) -> tk.Frame:
+        """Tarjeta de un paso numerado.  Devuelve el cuerpo."""
+        g = tk.Frame(parent, bg=CARD, highlightbackground=BORDER,
+                     highlightthickness=2)
+        g.pack(fill="x", padx=12, pady=5)
+        lbl = tk.Label(g, text=f"{n}.  {title}", font=(UI, 12, "bold"),
+                       fg=ACCENT, bg=CARD, anchor="w")
+        lbl.pack(fill="x", padx=12, pady=(10, 0))
+        if hint:
+            self._text(g, hint, small=True, wraplength=580
+                       ).pack(fill="x", padx=12, pady=(2, 4))
+        self._steps.append((g, lbl, f"{n}.  {title}"))
+        return g
+
+    def _build_test(self, tab: tk.Frame) -> None:
+        self._steps: List[Tuple[tk.Frame, tk.Label, str]] = []
+        self._chk_labels: Dict[str, tk.Label] = {}
+
+        # Estudio (una línea; selector sólo si hay varios)
+        g = tk.Frame(tab, bg=BG)
+        g.pack(fill="x", padx=14, pady=(4, 0))
+        self._lbl_study_name = tk.Label(g, text="", fg=FG, bg=BG,
+                                        font=(UI, 10, "bold"), anchor="w",
+                                        justify="left", wraplength=600)
         self._var_study = tk.StringVar()
         self._cbo_study = ttk.Combobox(g, textvariable=self._var_study,
                                        state="readonly", width=48,
                                        font=(UI, 10))
         self._cbo_study.bind("<<ComboboxSelected>>",
                              lambda _e: self._on_study_selected())
-        self._lbl_study = self._text(g, small=True, wraplength=580)
-        self._lbl_study.pack(fill="x", padx=12, pady=(2, 10))
+        self._lbl_study = self._text(g, small=True, wraplength=600, bg=BG)
+        self._lbl_study.pack(fill="x")
+        self._chk_labels["study"] = self._text(g, small=True, bg=BG)
 
-        g = self._group(tab, "Participante")
+        # 1 · Código
+        g = self._step(tab, 1, "Escribe tu código de participante",
+                       "El que te dio el equipo (por ejemplo P07). Nunca tu "
+                       "nombre.")
         row = tk.Frame(g, bg=CARD)
         row.pack(fill="x", padx=12)
         self._text(row, "Código").pack(side="left")
@@ -725,29 +757,46 @@ class App:
         self._cbo_group = ttk.Combobox(row, textvariable=self._var_group,
                                        state="disabled", width=12,
                                        font=(UI, 10), values=[])
-        self._text(g, "Escribe el código que te asignaron (por ejemplo "
-                   "P07). Nunca tu nombre.", small=True
-                   ).pack(fill="x", padx=12, pady=(4, 0))
         self._var_glasses = tk.BooleanVar(value=False)
         self._check(g, "Uso lentes", self._var_glasses
-                    ).pack(fill="x", padx=12, pady=(4, 10))
+                    ).pack(fill="x", padx=12, pady=(4, 0))
+        self._chk_labels["code"] = self._text(g)
+        self._chk_labels["code"].pack(fill="x", padx=12, pady=(2, 10))
 
-        g = self._group(tab, "Calibración")
-        self._text(g, "Cara iluminada de frente, a unos 60 cm de la "
-                   "pantalla y la cabeza quieta.",
-                   small=True, wraplength=580).pack(fill="x", padx=12)
+        # 2 · Sitio e inicio de sesión
+        g = self._step(tab, 2, "Abre el sitio e inicia sesión con tu cuenta",
+                       "Se abre una ventana del prototipo con el sitio. Entra "
+                       "con tu cuenta UDEM: en la página de inicio de sesión "
+                       "no se registra nada. Deja esa ventana abierta.")
+        FlatButton(g, "🌐  Abrir el sitio", YELLOW, self._open_study_site,
+                   pady=7, width=22, font=(UI, 11, "bold")
+                   ).pack(anchor="w", padx=12, pady=(4, 2))
+        self._chk_labels["web"] = self._text(g, wraplength=580)
+        self._chk_labels["web"].pack(fill="x", padx=12, pady=(2, 10))
+
+        # 3 · Calibración
+        g = self._step(tab, 3, "Calibra la mirada",
+                       "Cara iluminada de frente, a unos 60 cm de la pantalla. "
+                       "Mira cada punto que aparezca SIN mover la cabeza "
+                       "(≈ 1 minuto). Al final se comprueba la precisión.")
         row = tk.Frame(g, bg=CARD)
-        row.pack(fill="x", padx=12, pady=(8, 6))
-        self._btn_cal = FlatButton(row, "🎯  Calibrar y verificar", YELLOW,
-                                   self._do_calibrate, pady=9, width=24,
+        row.pack(fill="x", padx=12, pady=(4, 2))
+        self._btn_cal = FlatButton(row, "🎯  Calibrar", YELLOW,
+                                   self._do_calibrate, pady=7, width=22,
                                    font=(UI, 11, "bold"))
         self._btn_cal.pack(side="left")
         FlatButton(row, "🎥  Ver cámara", SOFT, self._toggle_debug,
-                   pady=9).pack(side="left", padx=8)
+                   pady=7).pack(side="left", padx=8)
+        self._chk_labels["camera"] = self._text(g, wraplength=580)
+        self._chk_labels["camera"].pack(fill="x", padx=12)
         self._lbl_cal = self._text(g, "Calibración: pendiente", fg=FG2)
         self._lbl_cal.pack(fill="x", padx=12)
         self._lbl_val = self._text(g, "Verificación: pendiente", fg=FG2)
         self._lbl_val.pack(fill="x", padx=12, pady=(0, 10))
+        # El preflight también escribe aquí (no se muestran: _lbl_cal/_val
+        # ya dan el mismo dato con más detalle)
+        self._chk_labels["cal"] = self._text(g)
+        self._chk_labels["val"] = self._text(g)
 
         # Valores fijos: 9 puntos y modelo geométrico (invariante a la
         # cabeza).  Con "polynomial" el modelo geométrico no se usaba nunca.
@@ -755,6 +804,39 @@ class App:
         self._var_pts = tk.IntVar(value=9)
         self._var_method = tk.StringVar(value="geometric")
 
+        # 4 · Tareas
+        g = self._step(tab, 4, "Haz las 3 tareas",
+                       "Lee y acepta el consentimiento. Esta ventana se "
+                       "esconde y abajo aparece un panel con cada tarea: "
+                       "léela, pulsa «Comenzar tarea», hazla en el sitio y "
+                       "pulsa «Terminé» (o «No pude»).")
+        row = tk.Frame(g, bg=CARD)
+        row.pack(fill="x", padx=12, pady=(4, 6))
+        self._btn_start = FlatButton(row, "▶  Empezar la prueba", YELLOW,
+                                     self._do_start, pady=8, width=22,
+                                     font=(UI, 11, "bold"))
+        self._btn_start.pack(side="left", padx=(0, 8))
+        self._btn_stop = FlatButton(row, "■  Terminar", CORAL,
+                                    self._do_stop, state="disabled",
+                                    pady=8, width=12,
+                                    font=(UI, 11, "bold"))
+        self._btn_stop.pack(side="left")
+        self._lbl_session = tk.Label(g, text="Todavía no empieza", fg=FG2,
+                                     bg=CARD, font=(UI, 10, "bold"),
+                                     anchor="w")
+        self._lbl_session.pack(fill="x", padx=12)
+        self._lbl_session2 = self._text(g, small=True)
+        self._lbl_session2.pack(fill="x", padx=12, pady=(0, 10))
+
+        # 5 · Enviar
+        g = self._step(tab, 5, "Envía tus datos",
+                       "Crea un .zip con tu código y súbelo a la carpeta de "
+                       "Google Drive que te dio el equipo.")
+        FlatButton(g, "📦  Preparar archivo para enviar", SOFT,
+                   self._export_zip, pady=7).pack(anchor="w", padx=12,
+                                                  pady=(4, 12))
+
+        self._var_rehearsal = tk.BooleanVar(value=self._rehearsal_default)
         cam = self._collapsible(tab, "¿No se detecta la cámara?")
         g = self._group(cam, "Cámara")
         row = tk.Frame(g, bg=CARD)
@@ -768,56 +850,34 @@ class App:
         self._btn_scan = FlatButton(row, "🔍 Buscar cámaras", SOFT,
                                     self._do_scan, pady=3)
         self._btn_scan.pack(side="left", padx=6)
-
-    # ── Pestaña 2 · Sesión ──────────────────────────────────────────────
-
-    def _build_session(self, tab: tk.Frame) -> None:
-        g = self._group(tab, "Antes de empezar")
-        self._chk_labels: Dict[str, tk.Label] = {}
-        for key in ("study", "camera", "code", "cal", "val", "web"):
-            lbl = self._text(g, wraplength=580)
-            lbl.pack(fill="x", padx=14, pady=1)
-            self._chk_labels[key] = lbl
-        row = tk.Frame(g, bg=CARD)
-        row.pack(fill="x", padx=12, pady=(8, 10))
-        FlatButton(row, "🌐 Abrir el sitio e iniciar sesión", SOFT,
-                   self._open_study_site, pady=5).pack(side="left",
-                                                       padx=(0, 6))
-        self._text(g, "Se abre en una ventana propia del prototipo (no hace "
-                      "falta Chrome ni Tampermonkey). Si el sitio pide "
-                      "cuenta, el participante inicia sesión ahí antes de "
-                      "empezar; al terminar la ventana se cierra y la "
-                      "sesión se borra.", small=True,
-                   wraplength=580).pack(fill="x", padx=14, pady=(0, 10))
-
-        g = self._group(tab, "Sesión")
-        row = tk.Frame(g, bg=CARD)
-        row.pack(fill="x", padx=12, pady=(2, 8))
-        self._btn_start = FlatButton(row, "▶  Iniciar sesión", YELLOW,
-                                     self._do_start, pady=10, width=20,
-                                     font=(UI, 11, "bold"))
-        self._btn_start.pack(side="left", padx=(0, 8))
-        self._btn_stop = FlatButton(row, "■  Terminar sesión", CORAL,
-                                    self._do_stop, state="disabled",
-                                    pady=10, width=18,
-                                    font=(UI, 11, "bold"))
-        self._btn_stop.pack(side="left")
-        self._lbl_session = tk.Label(g, text="Sesión: inactiva", fg=FG2,
-                                     bg=CARD, font=(UI, 11, "bold"),
-                                     anchor="w")
-        self._lbl_session.pack(fill="x", padx=12)
-        self._lbl_session2 = self._text(g, small=True)
-        self._lbl_session2.pack(fill="x", padx=12)
-        FlatButton(g, "📦 Preparar archivo para enviar", SOFT,
-                   self._export_zip, pady=5).pack(anchor="w", padx=12,
-                                                  pady=(6, 10))
-
-        self._var_rehearsal = tk.BooleanVar(value=self._rehearsal_default)
-        link = tk.Label(tab, text="❔  Ver la guía (pasos y permisos)",
+        link = tk.Label(tab, text="❔  Ver la guía (permisos y problemas)",
                         fg=ACCENT, bg=BG, font=(UI, 10, "underline"),
                         cursor="hand2")
-        link.pack(anchor="w", padx=16, pady=(6, 0))
+        link.pack(anchor="w", padx=16, pady=(6, 8))
         link.bind("<Button-1>", lambda _e: self.nb.select(self.tab_guide))
+
+    def _paint_steps(self, items: Dict[str, Tuple[str, str]]) -> None:
+        """Marca con ✓ los pasos hechos y resalta el que toca."""
+        if not getattr(self, "_steps", None):
+            return
+        cal_txt, cal_col = items.get("cal", ("✗", RED))
+        hecho = [
+            items.get("code", ("", RED))[1] == GREEN,
+            items.get("web", ("", RED))[1] == GREEN,
+            cal_col in (GREEN, AMBER) and not str(cal_txt).startswith("✗")
+            and "ensayo" not in str(cal_txt),
+            bool(self._last_csv) and not self._session_active,
+            False,
+        ]
+        actual = next((i for i, h in enumerate(hecho) if not h), 4)
+        for i, (g, lbl, base) in enumerate(self._steps):
+            if hecho[i]:
+                lbl.config(text="✓ " + base, fg=GREEN)
+                g.config(highlightbackground=BORDER)
+            else:
+                lbl.config(text=base, fg=ACCENT)
+                g.config(highlightbackground=YELLOW if i == actual
+                         else BORDER)
 
     # ── Pestaña Guía ────────────────────────────────────────────────────
 
@@ -861,6 +921,10 @@ class App:
             L += [
                 ("p", "•  Si aparece «Terminal quiere acceder a la cámara», "
                       "pulsa Permitir."),
+                ("p", "•  Si macOS no dejó abrir Iniciar_Mac.command («no se "
+                      "puede verificar»): Ajustes del Sistema → Privacidad y "
+                      "seguridad → «Abrir de todos modos», o usa «bash "
+                      "run.sh» en la Terminal."),
                 ("p", "•  Si arriba dice «Sin cámara»: Ajustes del Sistema → "
                       "Privacidad y seguridad → Cámara → activa Terminal. "
                       "Cierra el prototipo y vuelve a abrirlo."),
@@ -874,35 +938,26 @@ class App:
         L += [
             ("p", "•  Si tu antivirus avisa que «python» quiere usar la "
                   "cámara, permítelo: es este prototipo."),
-            ("h", "2 · Abrir el sitio e iniciar sesión"),
-            ("p", "1.  Pestaña Sesión → «Abrir el sitio e iniciar sesión». "
-                  "Se abre una ventana del prototipo con el sitio."),
-            ("p", "2.  Si te pide cuenta, inicia sesión con la tuya. El "
-                  "prototipo no lee ni guarda tu contraseña: en la página "
-                  "de inicio de sesión no registra nada."),
-            ("p", "3.  Arriba debe decir «Navegador conectado» en verde."),
-            ("p", "4.  Al terminar la sesión esa ventana se cierra sola y tu "
-                  "sesión del sitio se borra de esta computadora."),
-            ("h", "3 · La prueba"),
-            ("p", "1.  Pestaña Preparación: escribe el código que te "
-                  "asignaron y pulsa «Calibrar y verificar». Mira cada "
-                  "punto sin mover la cabeza."),
-            ("p", "2.  Pestaña Sesión: cuando todo esté en verde, «Iniciar "
-                  "sesión». Lee y acepta el consentimiento y sigue el panel "
-                  "de cada tarea."),
-            ("p", "3.  Durante las tareas usa sólo la ventana del sitio "
-                  "(no la cierres ni abras otros programas). Si necesitas "
-                  "parar: Ctrl+Mayús+Q."),
-            ("h", "4 · Enviar tus datos"),
-            ("p", "1.  Pestaña Sesión → «Preparar archivo para enviar». Se "
-                  "crea un archivo .zip con tu código y se abre su carpeta."),
-            ("p", "2.  Sube ese .zip a la carpeta de Google Drive que te dio "
-                  "el equipo del estudio."),
-            ("p", "3.  Al terminar puedes borrar la carpeta del prototipo: "
-                  "no queda nada instalado fuera de ella."),
+            ("h", "2 · La prueba (pestaña «Prueba», de arriba abajo)"),
+            ("p", "1.  Escribe tu código de participante."),
+            ("p", "2.  «Abrir el sitio» e inicia sesión con tu cuenta en esa "
+                  "ventana. El prototipo no lee ni guarda tu contraseña: en "
+                  "la página de inicio de sesión no registra nada."),
+            ("p", "3.  «Calibrar»: mira cada punto sin mover la cabeza."),
+            ("p", "4.  «Empezar la prueba»: acepta el consentimiento y sigue "
+                  "el panel de abajo. En cada tarea: léela → «Comenzar "
+                  "tarea» → hazla en el sitio → «Terminé» (o «No pude»). "
+                  "Usa sólo la ventana del sitio. Para parar: Ctrl+Mayús+Q."),
+            ("p", "5.  «Preparar archivo para enviar» y sube el .zip a la "
+                  "carpeta de Google Drive del equipo."),
+            ("p", "El paso que toca está marcado en amarillo y cada paso "
+                  "hecho aparece con ✓. Al terminar, la ventana del sitio se "
+                  "cierra sola y tu sesión se borra de esta computadora; "
+                  "puedes borrar la carpeta del prototipo: no queda nada "
+                  "instalado fuera de ella."),
             ("h", "Si algo falla"),
             ("p", "•  «Sin cámara»: cierra los programas que usen la cámara, "
-                  "revisa el paso 1 y, en Preparación, abre «¿No se detecta "
+                  "revisa el paso 1 y, en la pestaña Prueba, abre «¿No se detecta "
                   "la cámara?»."),
             ("p", "•  «Navegador sin datos»: inicia sesión en la ventana del "
                   "sitio y déjala al frente (no minimizada)."),
@@ -914,7 +969,9 @@ class App:
             ("h", "Privacidad"),
             ("note", "No se graba video, fotos ni audio: la cámara sólo "
                      "calcula hacia dónde miras. Tus datos se guardan en "
-                     "esta carpeta, sin tu nombre, hasta que tú los subes."),
+                     "esta carpeta, sin tu nombre, hasta que tú los subes. "
+                     "El prototipo no abre ningún puerto de red ni envía "
+                     "nada por internet: sólo carga el sitio del estudio."),
         ]
         return L
 
@@ -937,9 +994,9 @@ class App:
         sb.config(command=self._lst.yview)
         row = tk.Frame(g, bg=CARD)
         row.pack(fill="x", padx=12, pady=(8, 10))
-        FlatButton(row, "📋 Informe", YELLOW, self._do_report,
-                   pady=6).pack(side="left", padx=(0, 6))
-        FlatButton(row, "🗺 Heatmaps", YELLOW, self._do_heatmaps,
+        FlatButton(row, "🌐 Ver informe (con heatmaps)", YELLOW,
+                   self._do_heatmaps, pady=6).pack(side="left", padx=(0, 6))
+        FlatButton(row, "📋 Texto", SOFT, self._do_report,
                    pady=6).pack(side="left", padx=(0, 6))
         FlatButton(row, "✏ Revisar tareas", SOFT, self._do_review,
                    pady=6).pack(side="left", padx=(0, 6))
@@ -1068,6 +1125,10 @@ class App:
             "study": st.id if st else "",
             "aois": st.bridge_config() if st else [],
             "hosts": st.allowed_hosts() if st else [],
+            # Capturas de la página del estudio (sólo durante las tareas)
+            "capture": bool(st and st.page_capture and self._session_active),
+            "shots_dir": (shots_dir_for(self._last_csv)
+                          if self._session_active and self._last_csv else ""),
         }
 
     def _bridge_sink(self, kind: str, payload: dict, t_ms: float) -> bool:
@@ -1075,17 +1136,63 @@ class App:
         host = urlparse(str(payload.get("url") or "")).hostname
         if hosts and host and host not in hosts:
             return False                  # evento de un sitio ajeno al estudio
+        if kind == "vp":
+            self._last_vp = payload
         return self.logger.web_event(kind, payload, t_ms)
 
+    def _sitio_fuera_de_pantalla(self) -> bool:
+        """La ventana del sitio está en OTRO monitor: la cámara sólo mapea
+        la mirada a la pantalla principal (donde se calibró)."""
+        vp = getattr(self, "_last_vp", None) or {}
+        try:
+            sw, sh = float(vp.get("sw") or 0), float(vp.get("sh") or 0)
+            x = float(vp.get("wx") or 0) + float(vp.get("iw") or 0) / 2
+            y = float(vp.get("wy") or 0) + float(vp.get("ih") or 0) / 2
+        except (TypeError, ValueError):
+            return False
+        return sw > 0 and sh > 0 and not (0 <= x < sw and 0 <= y < sh)
+
+    def _bridge_needs_server(self) -> bool:
+        """
+        El servidor HTTP local sólo hace falta para páginas propias servidas
+        en 127.0.0.1 (la página de prueba).  Con un sitio real (el portal) el
+        navegador integrado entrega los eventos por su propio canal y no se
+        abre ningún puerto: nada que el firewall o el antivirus revisen.
+        """
+        hosts = self.study.allowed_hosts() if self.study else []
+        return any(h in ("127.0.0.1", "localhost") for h in hosts)
+
     def _ensure_bridge(self) -> bool:
-        if self.bridge is not None and self.bridge.is_running:
+        listen = self._bridge_needs_server()
+        b = self.bridge
+        if b is not None and b.is_running and (b.listening or not listen):
             return True
+        if b is not None:
+            b.stop()
         port = self.study.bridge_port if self.study else 4243
         static = {"/pagina_prueba.html": TEST_PAGE,
                   "/web/eyetracking_bridge.user.js": USERSCRIPT}
         self.bridge = WebBridge(self._bridge_sink, self._bridge_config,
                                 port=port, static_files=static)
-        return self.bridge.start()
+        return self.bridge.start(listen=listen)
+
+    def _on_nav_evento(self, ev: dict) -> None:
+        """
+        Eventos del navegador integrado (hilo lector).  De las páginas de
+        dominios AJENOS al estudio (p. ej. Trayecto UDEM o la encuesta) sólo
+        se registra el dominio, para saber si el participante llegó; ahí no
+        se inyecta nada.
+        """
+        if ev.get("tipo") != "pagina" or ev.get("inyectado"):
+            return
+        host = urlparse(str(ev.get("url") or "")).hostname
+        if not host or not self._session_active:
+            return
+        try:
+            self.logger.web_event("nav", {"url": f"https://{host}/",
+                                          "externo": True})
+        except Exception:
+            pass
 
     def _bridge_state(self) -> Tuple[str, str]:
         """(texto, color) del estado del puente."""
@@ -1095,20 +1202,35 @@ class App:
             return f"✗ Navegador: puente apagado ({err})", RED
         age = b.seconds_since_last_event()
         if age is not None and age < 6:
-            return "✓ Navegador conectado", GREEN
+            if self._sitio_fuera_de_pantalla():
+                return ("⚠ La ventana del sitio está en otro monitor: "
+                        "muévela a la pantalla principal", AMBER)
+            return "✓ Sitio abierto y conectado", GREEN
         if age is not None:
             if self.nav is not None and not self.nav.vivo:
-                return ("⚠ Navegador cerrado: pulsa «Abrir el sitio e "
-                        "iniciar sesión»", AMBER)
-            return (f"⚠ Navegador: sin datos hace {age:.0f} s "
-                    "(¿ventana del sitio minimizada o en el login?)", AMBER)
+                return ("⚠ Cerraste la ventana del sitio: vuelve a "
+                        "pulsar «Abrir el sitio»", AMBER)
+            return ("⚠ Sin datos del sitio: inicia sesión y deja la "
+                    "ventana del sitio abierta (no minimizada)", AMBER)
         nav = self.nav
         if nav is not None and nav.vivo:
-            return ("⚠ Navegador abierto: inicia sesión en el sitio "
-                    "(cuando cargue una página del estudio se pondrá verde)",
-                    AMBER)
-        return ("⚠ Navegador: pulsa «Abrir el sitio e iniciar sesión» "
-                "(pestaña Sesión)", AMBER)
+            host = urlparse(nav.url_actual or "").hostname or ""
+            permitidos = self.study.allowed_hosts() if self.study else []
+            es_login = host.startswith(("login.", "sso.", "auth.", "idp."))
+            if host and not es_login and permitidos and host not in permitidos:
+                # Diagnóstico: el sitio cargó en un dominio que el estudio
+                # no tiene en «bridge.hosts», así que ahí no se registra.
+                return (f"⚠ La ventana está en «{host}», que no está en la "
+                        "lista del estudio (bridge.hosts): ahí no se "
+                        "registra nada. Avísale al equipo.", AMBER)
+            if host and nav.inyectado_actual and nav.salida:
+                return (f"⚠ El sitio cargó pero no envía datos: "
+                        f"{nav.salida[-1][:120]}", AMBER)
+            return ("⚠ Ventana abierta: inicia sesión con tu cuenta. "
+                    "Se pondrá en verde cuando cargue el sitio."
+                    + (f" (ahora en {host})" if host else ""), AMBER)
+        return ("Todavía no abres el sitio: pulsa «Abrir el sitio».",
+                AMBER)
 
     # ════════════════════════════════════════════════════════════════════
     #  Cámara
@@ -1350,7 +1472,7 @@ class App:
         code = self._var_code.get().strip()
         if not code:
             blocking.append("Escribe el código del participante "
-                            "(pestaña 1).")
+                            "(paso 1).")
             items["code"] = ("✗ Participante: falta escribir el código", RED)
         elif not valid_participant_code(code):
             blocking.append("El código de participante no es válido.")
@@ -1376,7 +1498,7 @@ class App:
         elif rehearsal:
             items["cal"] = ("⚠ Sin calibrar (modo ensayo)", AMBER)
         else:
-            blocking.append("Calibra con este participante (pestaña 1).")
+            blocking.append("Calibra con este participante (paso 3).")
             items["cal"] = (f"✗ Calibración: falta calibrar a {code or '—'}",
                             RED)
 
@@ -1387,11 +1509,6 @@ class App:
             items["val"] = ("⚠ Verificación de precisión: no hecha", AMBER)
 
         items["web"] = self._bridge_state()
-        needs = bool(st and any(a.selector or a.space == "page"
-                                for a in st.aois))
-        if needs and items["web"][1] != GREEN:
-            items["web"] = (items["web"][0] + " · necesario en este estudio",
-                            AMBER)
         return blocking, items
 
     def _update_status(self) -> None:
@@ -1416,6 +1533,7 @@ class App:
         _blocking, items = self._preflight()
         for key, (text, color) in items.items():
             self._chk_labels[key].config(text=text, fg=color)
+        self._paint_steps(items)
 
         if self._session_active and self._session_start:
             el = int(time.perf_counter() - self._session_start)
@@ -1868,7 +1986,7 @@ class App:
         else:
             lines.append("⚠ Los datos tienen poca calidad:")
             lines += [f"   · {r}" for r in quality["reasons"]]
-        lines += ["", "Último paso: en la pestaña Sesión pulsa «Preparar "
+        lines += ["", "Último paso (5): pulsa «Preparar "
                   "archivo para enviar» y sube el .zip a la carpeta de "
                   "Google Drive del estudio."]
         fuera = self._hosts_no_registrados()
@@ -1916,6 +2034,10 @@ class App:
                     if p and os.path.exists(p):
                         bgs[t.id] = p
         files = gen.session_images(an, os.path.splitext(csv_path)[0], bgs)
+        try:
+            write_html(an, files, csv_path)
+        except Exception as e:
+            print(f"[informe] no se pudo escribir el HTML: {e}")
         return an, txt, files
 
     def _refresh_sessions(self) -> None:
@@ -1990,10 +2112,10 @@ class App:
         def work() -> None:
             try:
                 _an, _t, files = self._make_outputs(p, self.study)
-                self._post(lambda: (self._open_path(os.path.dirname(p)),
-                                    self._info("Heatmaps generados",
-                                               f"{len(files)} imágenes junto "
-                                               "a la sesión.")))
+                html_path = f"{os.path.splitext(p)[0]}_informe.html"
+                self._post(lambda: self._open_path(
+                    html_path if os.path.exists(html_path)
+                    else os.path.dirname(p)))
             except Exception as e:
                 self._post(lambda err=e: self._error(
                     "Error", f"No se pudo generar:\n{err}"))
@@ -2100,12 +2222,15 @@ class App:
             webbrowser.open(url)
             return False
         if self.nav is not None and (self.nav.port != port
-                                     or self.nav.hosts != hosts):
+                                     or self.nav.hosts != hosts
+                                     or self.nav.bridge is not self.bridge):
             self.nav.cerrar()
             self.nav = None
         if self.nav is None:
             self.nav = NavegadorIntegrado(HERE, USERSCRIPT, port, hosts,
-                                          titulo=st.name if st else "Estudio")
+                                          titulo=st.name if st else "Estudio",
+                                          on_evento=self._on_nav_evento,
+                                          bridge=self.bridge)
         if self.nav.abrir(url):
             return True
         detalle = "\n".join(self.nav.salida[-6:])

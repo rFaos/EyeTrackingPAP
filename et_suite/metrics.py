@@ -28,8 +28,10 @@ import bisect
 import csv
 import math
 import os
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import numpy as np
 
@@ -333,7 +335,7 @@ class AOIResolver:
             elif a.rect is not None and a.space == "page":
                 x, y, w, h = a.rect
                 area = self._inside(fix.px, fix.py, x, y, x + w, y + h)
-            elif a.selector:
+            elif a.selector or a.text or a.opens:
                 m = self.layout_at(url, fix.start_ms).get(a.id)
                 if m and m.get("vis", True):
                     x, y, w, h = (float(m["x"]), float(m["y"]),
@@ -445,6 +447,205 @@ def _scanpath_px(fixes: List[Fix]) -> float:
                      for a, b in zip(fixes, fixes[1:])))
 
 
+# ════════════════════════════════════════════════════════════════════════════
+#  Corrección de la deriva con los clics
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Con webcam, si el participante se acomoda distinto después de calibrar (se
+# acerca, toma el ratón, se recarga), la mirada estimada queda DESPLAZADA de
+# forma casi constante.  Al hacer clic la persona mira lo que pulsa, así que
+# cada clic es un punto de calibración gratuito (la misma idea que usa
+# WebGazer).  Se estima el desplazamiento mediano mirada−clic y se resta a
+# toda la sesión.  Sólo se aplica si hay suficientes clics y si de verdad
+# reduce el error en esos clics; el informe dice cuánto se corrigió.
+
+CLICK_MIN_PAIRS = 3
+CLICK_WIN_MS = (600.0, 50.0)      # mirada entre 600 y 50 ms antes del clic
+CLICK_OUTLIER_PX = 350.0
+
+
+def click_correction(session: Session, apply: bool = True) -> Dict:
+    """
+    Estima (y aplica sobre ``session.rows``) la corrección por clics.
+
+    Devuelve ``{"applied", "n", "dx", "dy", "err_before_px",
+    "err_after_px"}``; ``applied`` es False si no hubo clics suficientes o
+    si la corrección no mejoraba.
+    """
+    from .display import content_origin
+    info: Dict = {"applied": False, "n": 0, "dx": 0.0, "dy": 0.0,
+                  "err_before_px": None, "err_after_px": None}
+    if getattr(session, "_click_corr", None) is not None:
+        return session._click_corr                       # ya aplicada
+    if not session.web:
+        return info
+    muestras = [r for r in session.rows if r["Face_Detected"]
+                and not r["Event_Type"].startswith("EVENT")
+                and r["Event_Type"] != "Blink"]
+    ts = [r["Timestamp_ms"] for r in muestras]
+    vp = None
+    k_px = 1.0
+    pares: List[Tuple[float, float, float, float]] = []
+    for e in sorted(session.web, key=lambda e: e.get("t_ms", 0.0)):
+        kind = e.get("k")
+        if kind == "vp":
+            vp = e
+            continue
+        if kind != "click" or vp is None:
+            continue
+        x, y = e.get("x"), e.get("y")
+        if x is None or y is None or (not x and not y):   # clic de teclado
+            continue
+        try:
+            css_w = float(vp.get("sw") or 0)
+            k_px = session.screen_w / css_w if css_w > 0 else 1.0
+            ox, oy = content_origin(vp)
+            tx, ty = (float(x) + ox) * k_px, (float(y) + oy) * k_px
+        except (TypeError, ValueError):
+            continue
+        t = float(e.get("t_ms", 0.0))
+        i0 = bisect.bisect_left(ts, t - CLICK_WIN_MS[0])
+        i1 = bisect.bisect_right(ts, t - CLICK_WIN_MS[1])
+        g = muestras[i0:i1]
+        if len(g) < 3:
+            continue
+        gx = float(np.median([r["Gaze_X"] for r in g]))
+        gy = float(np.median([r["Gaze_Y"] for r in g]))
+        pares.append((tx, ty, gx, gy))
+    if len(pares) < CLICK_MIN_PAIRS:
+        info["n"] = len(pares)
+        return info
+    p = np.array(pares)
+    d = p[:, 2:] - p[:, :2]
+    med = np.median(d, axis=0)
+    keep = np.hypot(*(d - med).T) < CLICK_OUTLIER_PX
+    if keep.sum() < CLICK_MIN_PAIRS:
+        info["n"] = int(keep.sum())
+        return info
+    off = np.median(d[keep], axis=0)
+    antes = float(np.mean(np.hypot(*d[keep].T)))
+    despues = float(np.mean(np.hypot(*(d[keep] - off).T)))
+    info.update(n=int(keep.sum()), dx=float(off[0]), dy=float(off[1]),
+                err_before_px=antes, err_after_px=despues)
+    if despues >= antes * 0.85 or not apply:
+        return info                                    # no compensa
+    dx, dy = float(off[0]), float(off[1])
+    for r in session.rows:
+        r["Gaze_X"] -= dx
+        r["Gaze_Y"] -= dy
+        if r["Page_X"] is not None and r["Page_Y"] is not None:
+            r["Page_X"] -= dx / k_px
+            r["Page_Y"] -= dy / k_px
+    info["applied"] = True
+    session._click_corr = info
+    return info
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  Flujo de la tarea (¿siguió el camino esperado?)
+# ════════════════════════════════════════════════════════════════════════════
+
+def _norm_txt(s) -> str:
+    s = unicodedata.normalize("NFD", str(s or "").lower())
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return " ".join(s.split())
+
+
+def _sin_hash(url: Optional[str]) -> str:
+    return str(url or "").split("#")[0]
+
+
+def evaluate_flow(steps, study: Optional[Study], session: Session,
+                  resolver: "AOIResolver", tfix: List[Fix],
+                  s_ms: Optional[float], e_ms: Optional[float]) -> List[Dict]:
+    """
+    Evalúa los pasos del flujo esperado de una tarea con lo que registró el
+    navegador (clics, diseño, scroll, páginas) y la mirada.
+
+    Cada paso se busca DESPUÉS del último paso cumplido, de modo que se ve
+    tanto qué hizo como en qué orden.  Devuelve, por paso:
+    ``{"id", "label", "kind", "aoi", "done", "t_s"}`` (t_s desde «Comenzar»).
+    """
+    if s_ms is None or e_ms is None:
+        return [{"id": st.id, "label": st.label, "kind": st.kind,
+                 "aoi": st.aoi, "done": False, "t_s": None} for st in steps]
+    web = sorted((e for e in session.web if s_ms <= e.get("t_ms", -1) <= e_ms),
+                 key=lambda e: e["t_ms"])
+    hosts = set(study.allowed_hosts()) if study else set()
+    start_url = _sin_hash(resolver.url_at(s_ms))
+
+    def rect(aoi: str, url: Optional[str], t: float) -> Optional[dict]:
+        m = resolver.layout_at(url, t).get(aoi)
+        return m if m and m.get("vis", True) else None
+
+    def hit(st, t0: float) -> Optional[float]:
+        a_def = study.aoi(st.aoi) if (study and st.aoi) else None
+        if st.kind == "click":
+            textos = [_norm_txt(x) for x in (a_def.text or [])] if a_def else []
+            for e in web:
+                if e["k"] != "click" or e["t_ms"] < t0:
+                    continue
+                m = rect(st.aoi, e.get("url"), e["t_ms"])
+                if m:
+                    x, y = ((e.get("x"), e.get("y")) if m.get("fixed")
+                            else (e.get("px"), e.get("py")))
+                    if (x is not None and y is not None
+                            and m["x"] - 4 <= x <= m["x"] + m["w"] + 4
+                            and m["y"] - 4 <= y <= m["y"] + m["h"] + 4):
+                        return e["t_ms"]
+                txt = _norm_txt(e.get("txt"))
+                if txt and any(tx and tx in txt for tx in textos):
+                    return e["t_ms"]
+        elif st.kind == "visible":
+            for e in web:
+                if e["k"] == "layout" and e["t_ms"] >= t0 and any(
+                        m.get("id") == st.aoi and m.get("vis", True)
+                        for m in e.get("aois", [])):
+                    return e["t_ms"]
+        elif st.kind == "scroll_to":
+            for e in web:
+                if e["k"] != "vp" or e["t_ms"] < t0:
+                    continue
+                m = rect(st.aoi, e.get("url"), e["t_ms"])
+                if not m:
+                    continue
+                if m.get("fixed"):
+                    return e["t_ms"]
+                sy, ih = float(e.get("sy") or 0), float(e.get("ih") or 0)
+                arriba, abajo = max(m["y"], sy), min(m["y"] + m["h"], sy + ih)
+                if abajo - arriba >= min(120.0, m["h"] * 0.5):
+                    return e["t_ms"]
+        elif st.kind == "look":
+            for f in tfix:
+                if f.start_ms >= t0 and st.aoi in f.aois:
+                    return f.start_ms
+        elif st.kind == "navigate":
+            for e in web:
+                if (e["k"] == "nav" and e["t_ms"] >= t0
+                        and _sin_hash(e.get("url")) != start_url):
+                    return e["t_ms"]
+        elif st.kind == "leave_site":
+            for e in web:
+                if e["k"] != "nav" or e["t_ms"] < t0:
+                    continue
+                h = urlparse(str(e.get("url") or "")).hostname or ""
+                if e.get("externo") or (hosts and h and h not in hosts
+                                        and h not in ("127.0.0.1", "localhost")):
+                    return e["t_ms"]
+        return None
+
+    out: List[Dict] = []
+    t_prev = s_ms
+    for st in steps:
+        t = hit(st, t_prev)
+        if t is not None:
+            t_prev = t
+        out.append({"id": st.id, "label": st.label, "kind": st.kind,
+                    "aoi": st.aoi, "done": t is not None,
+                    "t_s": ((t - s_ms) / 1000.0) if t is not None else None})
+    return out
+
+
 def analyze_session(session: Session,
                     study: Optional[Study] = None) -> Analysis:
     """Calcula todas las métricas de una sesión."""
@@ -455,6 +656,8 @@ def analyze_session(session: Session,
     min_fix = study.min_fixation_ms if study else MIN_FIXATION_MS
 
     resolver = AOIResolver(study, session)
+    corr = click_correction(session, apply=(study.click_correction
+                                            if study else True))
     all_fixes = extract_fixations(rows, min_ms=min_fix)
 
     # Fijaciones sobre el panel de tareas: se apartan (el participante lee
@@ -529,6 +732,7 @@ def analyze_session(session: Session,
         "panel_fix_ms": float(sum(f.dur_ms for f in panel_fixes)),
         "n_saccades": sum(1 for r in data if r["Event_Type"] == "Saccade"),
     }
+    session_m["click_correction"] = corr
     session_m.update(_stat_fix(fixes))
     session_m["ttff_ms"] = (fixes[0].start_ms - t0) if fixes else None
 
@@ -590,12 +794,16 @@ def analyze_session(session: Session,
             tm["first_click_s"] = ((min(e["t_ms"] for e in ck) - s_ms) / 1000.0
                                    if ck else None)
             tm["n_pages"] = len(pages) if session.web else None
+            # Dominios por los que pasó (p. ej. si llegó a Trayecto UDEM)
+            tm["hosts"] = sorted({urlparse(u).hostname or "" for u in pages}
+                                 - {""}) if session.web else []
             tm["n_page_loads"] = sum(1 for e in session.web
                                      if e.get("k") == "nav"
                                      and s_ms <= e["t_ms"] <= e_ms) \
                 if session.web else None
         else:
             tm["n_clicks"] = tm["n_pages"] = tm["n_page_loads"] = None
+            tm["hosts"] = []
             tm["first_click_s"] = None
 
         # Por AOI
@@ -659,6 +867,15 @@ def analyze_session(session: Session,
         tm["aoi_sequence"] = seq
         tm["aoi_transitions"] = max(0, len(seq) - 1)
         tm["first_aoi"] = seq[0] if seq else None
+
+        # Flujo esperado (pasos del diagrama de la tarea)
+        steps = t_def.flow if t_def else []
+        tm["flow"] = (evaluate_flow(steps, study, session, resolver, tfix,
+                                    s_ms, e_ms) if steps else [])
+        tm["flow_done"] = sum(1 for p in tm["flow"] if p["done"])
+        tm["flow_total"] = len(tm["flow"])
+        tm["flow_complete"] = (tm["flow_done"] == tm["flow_total"]
+                               if tm["flow"] else None)
         task_ms.append(tm)
 
     metrics: Dict = {
@@ -757,10 +974,23 @@ def assess_quality(session: Session, sm: Dict, tasks: List[Dict],
                         + ", ".join(map(str, low)))
 
     if sm.get("has_page_coords") is False and session.study and any(
-            a.selector or a.space == "page" for a in session.study.aois):
+            (a.selector or a.text or a.opens) or a.space == "page" for a in session.study.aois):
         warnings.append("el estudio usa AOI por selector/página pero no "
                         "llegaron datos del navegador (¿script no instalado?): "
                         "esos AOI no se pudieron evaluar")
+    elif session.web and session.study:
+        # AOI por selector/texto que el navegador nunca encontró: casi
+        # siempre es un selector o texto mal escrito en el estudio.
+        seen = {m.get("id") for e in session.web if e.get("k") == "layout"
+                for m in (e.get("aois") or [])}
+        started = {t["task"] for t in tasks if t["started"]}
+        missing = [a.id for a in session.study.aois
+                   if (a.selector or a.text or a.opens) and a.id not in seen
+                   and (a.tasks is None or started & set(a.tasks))]
+        if missing:
+            warnings.append("AOI que el navegador nunca encontró en la página "
+                            "(revisa su 'selector'/'text' en el estudio): "
+                            + ", ".join(missing))
 
     return {"valid": not reasons, "reasons": reasons, "warnings": warnings}
 

@@ -1,14 +1,14 @@
 {
-  "_LEEME": "Estudio de Ventana Amarilla = el Portal UDEM nuevo (https://portal.udem.edu/; el viejo era portalc.udem.edu). Cada estudiante inicia sesión con SU cuenta en el navegador integrado del prototipo, antes de empezar. Falta: (1) confirmar las 3 tareas (las de abajo son el borrador del estudio del portal anterior); (2) reemplazar los selectores '#REEMPLAZAR-...' de los AOI: entra al portal con una cuenta, clic derecho sobre el elemento → Inspeccionar → clic derecho en el código → Copy → Copy selector; (3) si después de iniciar sesión el portal te lleva a otro dominio (lo verás en la nota al final de la sesión de prueba), agrégalo a bridge.hosts. Si cambias el consentimiento, sube 'consent_version'. Los campos que empiezan con _ se ignoran.",
+  "_LEEME": "Cada tarea trae su 'flow': los pasos del diagrama de flujo; el informe marca cuáles hizo cada participante y en qué segundo. Estudio de Ventana Amarilla = Ventana UDEM, el portal de ServiceNow (https://udemsnprod.service-now.com/ventana_amarilla). Cada estudiante inicia sesión con SU cuenta en el navegador integrado del prototipo ANTES de empezar (en el login no se registra nada). Las 3 tareas siguen los diagramas de flujo del equipo: (1) Trayecto UDEM por el ícono de cuadrícula 3×3 del encabezado, (2) Encuesta Avanza con el buscador, (3) panel «Mis Solicitudes» bajando por la página de inicio. Los AOI se buscan por su TEXTO visible ('text'), así que no hace falta copiar selectores; 'selector' junto a 'text' indica a qué contenedor subir desde ese texto. Haz un piloto con una cuenta del equipo: si al final el informe dice «AOI que el navegador nunca encontró», ajusta el 'text' o el 'selector' de ese AOI. Si cambias el consentimiento, sube 'consent_version'. Los campos que empiezan con _ se ignoran.",
 
   "id": "ventana_amarilla_2026",
   "name": "Proyecto Iris: Optimización UX/UI y análisis biométrico aplicado a plataformas digitales.",
-  "version": "1.0",
-  "description": "Prueba de usabilidad con seguimiento ocular en el sitio Ventana Amarilla (Portal UDEM, portal.udem.edu): 3 tareas, hecha por cada participante en su computadora con su propia cuenta.",
-  "url": "https://portal.udem.edu/",
+  "version": "2.0",
+  "description": "Prueba de usabilidad con seguimiento ocular en Ventana Amarilla (Ventana UDEM, udemsnprod.service-now.com/ventana_amarilla): acceso a Trayecto UDEM, búsqueda de la Encuesta Avanza y consulta de «Mis Solicitudes». La hace cada participante en su computadora con su propia cuenta.",
+  "url": "https://udemsnprod.service-now.com/ventana_amarilla",
 
-  "consent_version": "IRIS-3",
-  "consent_text": "San Pedro Garza García, N.L., 2026\n\nEquipo responsable: Christopher Brandon Reeker Cireno, Luis Pablo Garza Moreno y Fabian Azaed Orta Singlaterry.\nProfesor: Dr. Eduardo Emmanuel Rodríguez López.\n\nEsta versión virtual acompaña a la carta de consentimiento que firmaste a mano. Al aceptarla declaro que he sido invitado(a) a participar de manera voluntaria en las pruebas de Seguimiento Ocular (Eye Tracking) del Proyecto Iris, y que entiendo los siguientes puntos:\n\n1. Objetivo de la prueba. Evaluar y recopilar datos sobre el comportamiento visual y la interacción del usuario al realizar tareas específicas en el sitio web Ventana Amarilla, con el fin de identificar áreas de oportunidad en su experiencia de usuario (UX/UI). Se evalúa el sitio, no a mí ni a mi desempeño.\n\n2. Protocolo de la prueba. La sesión se realiza en mi propia computadora con este prototipo y dura aproximadamente 20 minutos. Primero miraré unos puntos en la pantalla para calibrar el sistema (unos 2 minutos). Después entraré al sitio Ventana Amarilla (Portal UDEM) con mi cuenta y realizaré tres tareas predefinidas. Las tareas de registro y de alta/baja son simulaciones: llegaré hasta la pantalla del trámite sin confirmarlo, por lo que mi inscripción no se modificará. Al terminar subiré el archivo con mis datos a la carpeta de Google Drive que me indique el equipo.\n\n3. Uso de la cámara. La cámara web de mi computadora capta mi rostro únicamente para calcular, en tiempo real, hacia qué punto de la pantalla miro. No se graba ni se guarda video, fotografías ni audio.\n\n4. Uso de la información (privacidad y confidencialidad). Los datos recopilados se utilizarán única y exclusivamente con fines académicos, analíticos y de desarrollo de este proyecto, y mi identidad se mantendrá en estricta confidencialidad. Se registran: coordenadas de mi mirada en la pantalla y sus tiempos, parpadeos y una estimación del tamaño de la pupila, desplazamiento (scroll), clics y páginas del sitio visitadas, duración de cada tarea y si se completó, y la precisión de la calibración. No se registran mi contraseña, lo que escriba en formularios ni capturas de pantalla.\n   •  Entraré al portal con mi propia cuenta UDEM, en una ventana del prototipo. En la página de inicio de sesión no se registra nada, y al terminar la ventana se cierra y la sesión se borra de la computadora. El portal muestra datos personales (materias, puntaje TOEFL); el prototipo no los guarda y el equipo no los anotará ni los usará.\n   •  Los datos se identifican con un código de participante, no con mi nombre.\n   •  Sólo el equipo responsable tiene acceso a ellos y los resultados se presentan de forma agregada, sin identificarme.\n   •  Los datos se conservan únicamente mientras dure el proyecto y después se eliminan.\n\n5. Participación voluntaria. Mi participación es completamente voluntaria. Puedo retirarme en cualquier momento, sin necesidad de justificación y sin que esto represente algún perjuicio para mí (pulsando «No acepto», Ctrl+Mayús+Q o cerrando el programa), y solicitar al equipo responsable la eliminación de mis datos indicando mi código de participante. No participar o retirarme no afecta mis calificaciones ni mi relación con la Universidad de Monterrey.\n\n6. Riesgos. La prueba es de riesgo mínimo; puede causar un cansancio visual leve y puedo hacer una pausa entre tareas cuando lo necesite.\n\nDeclaración de consentimiento. He leído y comprendido la información de este documento, y mis dudas sobre el proyecto, el protocolo y la prueba de Eye Tracking han sido aclaradas por el equipo responsable. Por lo tanto, otorgo mi consentimiento libre y voluntario para participar en las pruebas bajo el protocolo descrito y permito el uso de la cámara web para estimar mi mirada.",
+  "consent_version": "IRIS-5",
+  "consent_text": "San Pedro Garza García, N.L., 2026\n\nEquipo responsable: Christopher Brandon Reeker Cireno, Luis Pablo Garza Moreno y Fabian Azaed Orta Singlaterry.\nProfesor: Dr. Eduardo Emmanuel Rodríguez López.\n\nEsta versión virtual acompaña a la carta de consentimiento que firmaste a mano. Al aceptarla declaro que he sido invitado(a) a participar de manera voluntaria en las pruebas de Seguimiento Ocular (Eye Tracking) del Proyecto Iris, y que entiendo los siguientes puntos:\n\n1. Objetivo de la prueba. Evaluar y recopilar datos sobre el comportamiento visual y la interacción del usuario al realizar tareas específicas en el sitio web Ventana Amarilla, con el fin de identificar áreas de oportunidad en su experiencia de usuario (UX/UI). Se evalúa el sitio, no a mí ni a mi desempeño.\n\n2. Protocolo de la prueba. La sesión se realiza en mi propia computadora con este prototipo y dura aproximadamente 20 minutos. Primero miraré unos puntos en la pantalla para calibrar el sistema (unos 2 minutos). Después entraré al sitio Ventana Amarilla (Portal UDEM) con mi cuenta y realizaré tres tareas predefinidas: entrar a la plataforma Trayecto UDEM, abrir la Encuesta Avanza y consultar el panel «Mis Solicitudes». No tendré que contestar ni enviar la encuesta ni hacer ningún trámite: sólo llegar a la pantalla que se indica. Al terminar subiré el archivo con mis datos a la carpeta de Google Drive que me indique el equipo.\n\n3. Uso de la cámara. La cámara web de mi computadora capta mi rostro únicamente para calcular, en tiempo real, hacia qué punto de la pantalla miro. No se graba ni se guarda video, fotografías ni audio.\n\n4. Uso de la información (privacidad y confidencialidad). Los datos recopilados se utilizarán única y exclusivamente con fines académicos, analíticos y de desarrollo de este proyecto, y mi identidad se mantendrá en estricta confidencialidad. Se registran: coordenadas de mi mirada en la pantalla y sus tiempos, parpadeos y una estimación del tamaño de la pupila, desplazamiento (scroll), clics y páginas del sitio visitadas, duración de cada tarea y si se completó, y la precisión de la calibración. También se guardan imágenes de las páginas del portal que vea durante las tareas (sólo el contenido de la ventana del sitio, nunca mi escritorio, otras ventanas ni la página de inicio de sesión), para dibujar sobre ellas dónde miré. No se registran mi contraseña ni lo que escriba en formularios.\n   •  Entraré al portal con mi propia cuenta UDEM, en una ventana del prototipo. En la página de inicio de sesión no se registra nada, y al terminar la ventana se cierra y la sesión se borra de la computadora. Si el portal me lleva a otro sitio (por ejemplo, Trayecto UDEM o la encuesta), de ese sitio sólo se registra su nombre de dominio. El portal muestra datos personales (por ejemplo, mi progreso académico y mis solicitudes); esas imágenes pueden mostrarlos, por lo que el equipo las usará sólo para ubicar la mirada, no anotará ni usará esos datos y no las publicará: en presentaciones o reportes sólo se usarán capturas hechas con una cuenta del equipo.\n   •  Los datos se identifican con un código de participante, no con mi nombre.\n   •  Sólo el equipo responsable tiene acceso a ellos y los resultados se presentan de forma agregada, sin identificarme.\n   •  Los datos se conservan únicamente mientras dure el proyecto y después se eliminan.\n\n5. Participación voluntaria. Mi participación es completamente voluntaria. Puedo retirarme en cualquier momento, sin necesidad de justificación y sin que esto represente algún perjuicio para mí (pulsando «No acepto», Ctrl+Mayús+Q o cerrando el programa), y solicitar al equipo responsable la eliminación de mis datos indicando mi código de participante. No participar o retirarme no afecta mis calificaciones ni mi relación con la Universidad de Monterrey.\n\n6. Riesgos. La prueba es de riesgo mínimo; puede causar un cansancio visual leve y puedo hacer una pausa entre tareas cuando lo necesite.\n\nDeclaración de consentimiento. He leído y comprendido la información de este documento, y mis dudas sobre el proyecto, el protocolo y la prueba de Eye Tracking han sido aclaradas por el equipo responsable. Por lo tanto, otorgo mi consentimiento libre y voluntario para participar en las pruebas bajo el protocolo descrito y permito el uso de la cámara web para estimar mi mirada.",
 
   "reference_screen": { "width": 1920, "height": 1080 },
   "display": { "width_cm": null, "distance_cm": 60 },
@@ -17,45 +17,83 @@
 
   "tasks": [
     {
+      "_flujo": "Home → ícono de cuadrícula (3×3) del encabezado → menú flotante de accesos directos → botón «Trayecto UDEM» (ícono azul «TU») → se abre la plataforma externa de Trayecto UDEM.",
       "id": 1,
-      "title": "Registro de materias",
-      "instruction": "Imagina que vas a inscribir tus materias del próximo semestre. Desde el portal, llega a la pantalla donde se registran materias. NO confirmes ninguna inscripción: cuando estés en esa pantalla, pulsa «Terminé».",
+      "title": "Acceso a Trayecto UDEM",
+      "instruction": "Desde la página de inicio de Ventana UDEM, entra a la plataforma «Trayecto UDEM», donde se muestra tu progreso académico. Cuando se abra Trayecto UDEM, pulsa «Terminé».",
       "target_aoi": "obj_t1",
-      "time_limit_s": 240,
-      "start_url": "https://portal.udem.edu/"
+      "time_limit_s": 180,
+      "start_url": "https://udemsnprod.service-now.com/ventana_amarilla",
+      "flow": [
+        { "id": "clic_cuadricula", "label": "Clic en el ícono de cuadrícula (3×3)", "click": "icono_cuadricula" },
+        { "id": "menu_abierto",    "label": "Se despliega el menú de accesos directos", "visible": "menu_accesos" },
+        { "id": "clic_trayecto",   "label": "Clic en «Trayecto UDEM»", "click": "obj_t1" },
+        { "id": "abre_trayecto",   "label": "Se abre la plataforma Trayecto UDEM", "leave_site": true }
+      ]
     },
     {
+      "_flujo": "Home → clic en el buscador → escribir «Encuesta Avanza» → seleccionar el enlace → cargan las preguntas.",
       "id": 2,
-      "title": "Consulta del puntaje TOEFL",
-      "instruction": "Consulta cuál es tu puntaje TOEFL registrado en el portal. Cuando lo veas en pantalla, pulsa «Terminé».",
+      "title": "Búsqueda y acceso a la Encuesta Avanza",
+      "instruction": "Busca la «Encuesta Avanza» y ábrela. Cuando veas sus preguntas en pantalla, pulsa «Terminé». No la contestes ni la envíes.",
       "target_aoi": "obj_t2",
-      "time_limit_s": 240,
-      "start_url": "https://portal.udem.edu/"
+      "time_limit_s": 180,
+      "start_url": "https://udemsnprod.service-now.com/ventana_amarilla",
+      "flow": [
+        { "id": "clic_buscador",  "label": "Clic en el buscador", "click": "buscador" },
+        { "id": "ve_resultado",   "label": "Aparece «Encuesta Avanza» en los resultados", "visible": "obj_t2" },
+        { "id": "clic_encuesta",  "label": "Clic en el enlace de la encuesta", "click": "obj_t2" },
+        { "id": "carga_encuesta", "label": "Carga la encuesta (cambia la página)", "navigate": true }
+      ]
     },
     {
+      "_flujo": "Home (arriba: buscador y carruseles) → scroll hacia abajo pasando por bloques como «Vida académica» y «Servicios escolares» → zona inferior antes del pie de página → tabla «Mis Solicitudes» (Número, Estado, Tipo…).",
       "id": 3,
-      "title": "Alta o baja de asignaturas",
-      "instruction": "Imagina que necesitas dar de alta o de baja una materia. Encuentra dónde se hace ese trámite y llega hasta su pantalla. NO confirmes ningún cambio: cuando estés ahí, pulsa «Terminé».",
+      "title": "Consulta del panel «Mis Solicitudes»",
+      "instruction": "En la página de inicio de Ventana UDEM, encuentra el panel donde puedes revisar el estado de tus solicitudes (trámites). Cuando veas el listado, pulsa «Terminé».",
       "target_aoi": "obj_t3",
-      "time_limit_s": 240,
-      "start_url": "https://portal.udem.edu/"
+      "time_limit_s": 180,
+      "start_url": "https://udemsnprod.service-now.com/ventana_amarilla",
+      "flow": [
+        { "id": "baja_vida",      "label": "Baja hasta «Vida académica»", "scroll_to": "bloque_vida_academica" },
+        { "id": "baja_servicios", "label": "Baja hasta «Servicios escolares»", "scroll_to": "bloque_servicios_escolares" },
+        { "id": "llega_panel",    "label": "Llega al panel «Mis Solicitudes»", "scroll_to": "obj_t3" },
+        { "id": "mira_panel",     "label": "Mira el listado de solicitudes", "look": "obj_t3" }
+      ]
     }
   ],
 
   "aois": [
-    { "id": "encabezado", "label": "Encabezado", "selector": "header" },
-    { "id": "menu",       "label": "Menú de navegación", "selector": "nav" },
+    { "id": "encabezado", "label": "Encabezado (header)", "selector": "header" },
     { "id": "contenido",  "label": "Contenido principal", "selector": "main" },
+    { "_nota": "El buscador es un campo sin texto propio: se reconoce por su placeholder/aria-label («Buscar…»).",
+      "id": "buscador",   "label": "Buscador", "text": ["buscar", "busca", "search"],
+      "selector": "input, [role=search], [role=combobox], [role=searchbox]" },
 
-    { "_nota": "Opcional: un AOI intermedio por tarea (p. ej. la opción de menú que lleva al objetivo). Ayuda a ver si el participante encontró el camino aunque no llegara al final.",
-      "id": "menu_t1", "label": "Opción de menú · registro",   "selector": "#REEMPLAZAR-menu-t1", "tasks": [1] },
-    { "id": "obj_t1",  "label": "Pantalla de registro de materias", "selector": "#REEMPLAZAR-obj-t1",  "tasks": [1] },
+    { "_nota": "Tarea 1. El ícono de cuadrícula no tiene texto: se reconoce como el botón que ABRE el menú donde está «Trayecto UDEM».",
+      "id": "icono_cuadricula", "label": "Ícono de cuadrícula 3×3 (encabezado)",
+      "opens": "Trayecto UDEM", "tasks": [1] },
+    { "id": "menu_accesos", "label": "Menú flotante de accesos directos",
+      "text": "Trayecto UDEM",
+      "selector": "[role=dialog], [role=menu], [class*='modal' i], [class*='popover' i], [class*='dropdown' i], [class*='drawer' i]",
+      "tasks": [1] },
+    { "id": "obj_t1", "label": "Botón «Trayecto UDEM»", "text": "Trayecto UDEM",
+      "selector": "a, button, [role=button], [role=menuitem], li", "tasks": [1] },
 
-    { "id": "menu_t2", "label": "Opción de menú · TOEFL",   "selector": "#REEMPLAZAR-menu-t2", "tasks": [2] },
-    { "id": "obj_t2",  "label": "Puntaje TOEFL", "selector": "#REEMPLAZAR-obj-t2",  "tasks": [2] },
+    { "_nota": "Tarea 2. El objetivo es el enlace de la Encuesta Avanza en los resultados del buscador.",
+      "id": "obj_t2", "label": "Enlace «Encuesta Avanza» (resultados)", "text": "Encuesta Avanza",
+      "selector": "a, button, [role=option], [role=link], [role=button], li", "tasks": [2] },
 
-    { "id": "menu_t3", "label": "Opción de menú · alta/baja",   "selector": "#REEMPLAZAR-menu-t3", "tasks": [3] },
-    { "id": "obj_t3",  "label": "Trámite de alta/baja", "selector": "#REEMPLAZAR-obj-t3",  "tasks": [3] }
+    { "_nota": "Tarea 3. Bloques intermedios por los que se pasa al bajar, y el panel final. 'selector' = contenedor del bloque; si no se encuentra, quita el 'selector' para medir sólo el título.",
+      "id": "bloque_vida_academica", "label": "Bloque «Vida académica»", "text": "Vida académica",
+      "selector": "section, article, [role=region], [class*='card' i], [class*='panel' i], [class*='widget' i]",
+      "tasks": [3] },
+    { "id": "bloque_servicios_escolares", "label": "Bloque «Servicios escolares»", "text": "Servicios escolares",
+      "selector": "section, article, [role=region], [class*='card' i], [class*='panel' i], [class*='widget' i]",
+      "tasks": [3] },
+    { "id": "obj_t3", "label": "Panel «Mis Solicitudes»", "text": "Mis Solicitudes",
+      "selector": "section, article, table, [role=region], [class*='card' i], [class*='panel' i], [class*='widget' i]",
+      "tasks": [3] }
   ],
 
   "quality": {
@@ -72,10 +110,13 @@
 
   "show_gaze_overlay": false,
   "task_panel": { "position": "bottom" },
-  "_capture_screenshots": "Desactivado: el portal muestra datos personales de cada estudiante (materias, TOEFL) y en macOS las capturas piden el permiso de «Grabación de pantalla». Para tener fondo en los heatmaps, toma tú las capturas con una cuenta del equipo, guárdalas junto a este JSON y añade \"background\": \"archivo.png\" a cada tarea.",
+  "_page_capture": "true: el navegador integrado guarda imágenes SÓLO de la página del portal durante las tareas (no del escritorio, no del login, sin pedir permisos en macOS) y los heatmaps se dibujan sobre ellas. Muestran datos personales: están en el consentimiento IRIS-5; no las publiques. Pon false para desactivarlo.",
+  "page_capture": true,
+  "_capture_screenshots": "Captura de la PANTALLA completa del sistema: desactivada (el escritorio puede mostrar cualquier cosa y en macOS pide «Grabación de pantalla»). Para tener fondo en los heatmaps, toma tú las capturas con una cuenta del equipo, guárdalas junto a este JSON y añade \"background\": \"archivo.png\" a cada tarea.",
   "capture_screenshots": false,
   "final_validation": true,
   "_review_at_end": "false: el participante no ve la ventana de revisión; el equipo marca si cada tarea fue correcta después (Resultados → Revisar tareas).",
   "review_at_end": false,
-  "bridge": { "port": 4243, "hosts": ["portal.udem.edu"] }
+  "_bridge": "hosts = dominios donde se registran scroll, clics y AOI. Trayecto UDEM y la encuesta pueden estar en otro dominio: ahí sólo se anota el dominio visitado (sirve para saber si se llegó). Si quieres medir AOI dentro de ellos, agrega su dominio aquí (aparece en la «nota para el equipo» al terminar el piloto).",
+  "bridge": { "port": 4243, "hosts": ["udemsnprod.service-now.com", "portal.udem.edu"] }
 }

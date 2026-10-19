@@ -10,12 +10,23 @@ al cambiar de sitio web:
   • el texto del consentimiento informado,
   • los umbrales de calidad para excluir sesiones malas.
 
-Cómo se define un AOI (cada uno admite UNA de estas dos formas):
+Cómo se define un AOI (cada uno admite UNA de estas formas):
 
   "selector": "nav"                 selector CSS.  El puente web
                                     (``web_bridge``) mide el elemento en la
                                     página real del participante, aunque haya
                                     scroll o cambie el tamaño de la ventana.
+  "text": "Mis Solicitudes"         texto visible (o aria-label, title,
+                                    placeholder) del elemento; no hace falta
+                                    ver el HTML.  Sin importar mayúsculas ni
+                                    acentos.  Una lista ["Apps", "Accesos"]
+                                    vale si aparece cualquiera.
+  "opens": "Trayecto UDEM"          el BOTÓN que abre el menú donde está ese
+                                    texto (íconos sin texto, como el de
+                                    cuadrícula).  Con "selector" a la vez, se
+                                    sube desde ese texto al contenedor más
+                                    cercano que cumpla el selector (p. ej.
+                                    "section, table": todo el panel).
   "rect": [x, y, ancho, alto]       rectángulo manual.  Con "space":
         "viewport" → píxeles de pantalla a la resolución de referencia
                      (sirve cuando la página cabe sin scroll)
@@ -65,6 +76,26 @@ class Task:
     start_url: Optional[str] = None       # se abre al pulsar "Comenzar"
     background: Optional[str] = None      # imagen de fondo para heatmaps
     page_screenshot: Optional[str] = None  # captura de la página completa
+    flow: List["FlowStep"] = field(default_factory=list)  # camino esperado
+
+
+# Tipos de paso de un flujo (``"flow"`` de una tarea).  Cada paso tiene UNA
+# de estas claves; se evalúan en orden, cada uno después del anterior:
+#   "click": aoi       clic sobre ese AOI (o sobre su texto)
+#   "visible": aoi     el AOI aparece en pantalla (p. ej. se abre un menú)
+#   "scroll_to": aoi   el participante desplaza la página hasta verlo
+#   "look": aoi        fija la mirada en el AOI
+#   "navigate": true   se carga otra página (cambia la URL)
+#   "leave_site": true se abre un sitio de OTRO dominio (p. ej. Trayecto UDEM)
+FLOW_KINDS = ("click", "visible", "scroll_to", "look", "navigate", "leave_site")
+
+
+@dataclass
+class FlowStep:
+    id: str
+    label: str
+    kind: str                      # uno de FLOW_KINDS
+    aoi: Optional[str] = None
 
 
 @dataclass
@@ -73,6 +104,8 @@ class AOIDef:
     label: str
     tasks: Optional[List[int]] = None     # None = todas las tareas
     selector: Optional[str] = None
+    text: Optional[List[str]] = None      # texto visible del elemento (alguno)
+    opens: Optional[str] = None           # botón que abre el menú con ese texto
     rect: Optional[Tuple[float, float, float, float]] = None
     space: str = "viewport"               # "viewport" | "page"
     url_contains: Optional[str] = None    # sólo vale en URLs que lo incluyan
@@ -125,9 +158,12 @@ class Study:
     aoi_margin_px: float = 0.0
     min_fixation_ms: float = 150.0
     heatmap_sigma_px: float = 55.0
+    click_correction: bool = True   # corregir la deriva con los clics
     show_gaze_overlay: bool = False
     task_panel_position: str = "bottom"       # bottom | top | bottom-right
     capture_screenshots: bool = True
+    # Capturas de la página desde el navegador integrado (fondo de heatmaps)
+    page_capture: bool = True
     final_validation: bool = True
     review_at_end: bool = False   # ventana de revisión del facilitador al final
     bridge_port: int = 4243
@@ -153,10 +189,10 @@ class Study:
         return [a for a in self.aois if a.applies_to(task_id)]
 
     def bridge_config(self) -> List[dict]:
-        """AOI por selector, en el formato que consume el script del navegador."""
-        return [{"id": a.id, "selector": a.selector,
-                 "url_contains": a.url_contains}
-                for a in self.aois if a.selector]
+        """AOI por selector/texto, en el formato que consume el script del navegador."""
+        return [{"id": a.id, "selector": a.selector, "text": a.text,
+                 "opens": a.opens, "url_contains": a.url_contains}
+                for a in self.aois if a.selector or a.text or a.opens]
 
     def allowed_hosts(self) -> List[str]:
         """Dominios donde el script del navegador debe activarse."""
@@ -244,6 +280,19 @@ def study_from_dict(d: dict, path: str = "") -> Study:
         if tid in seen_ids:
             errors.append(f"{ctx}: id {tid} repetido")
         seen_ids.add(tid)
+        flow: List[FlowStep] = []
+        for j, fs in enumerate(t.get("flow") or [], start=1):
+            kinds = [k for k in FLOW_KINDS if k in fs]
+            if len(kinds) != 1:
+                errors.append(f"{ctx}.flow[{j}]: usa una (y sólo una) de "
+                              + ", ".join(FLOW_KINDS))
+                continue
+            kind = kinds[0]
+            aoi = fs[kind] if kind in ("click", "visible", "scroll_to",
+                                       "look") else None
+            flow.append(FlowStep(id=str(fs.get("id") or f"paso{j}"),
+                                 label=str(fs.get("label") or f"Paso {j}"),
+                                 kind=kind, aoi=str(aoi) if aoi else None))
         title = str(t.get("title", f"Tarea {tid}")).strip()
         instr = str(t.get("instruction", "")).strip()
         if not instr:
@@ -255,6 +304,7 @@ def study_from_dict(d: dict, path: str = "") -> Study:
             start_url=t.get("start_url") or None,
             background=t.get("background") or None,
             page_screenshot=t.get("page_screenshot") or None,
+            flow=flow,
         ))
 
     # ── AOI ──────────────────────────────────────────────────────────────
@@ -269,9 +319,15 @@ def study_from_dict(d: dict, path: str = "") -> Study:
             errors.append(f"{ctx}: id '{aid}' repetido")
         aoi_ids.add(aid)
         sel = a.get("selector") or None
+        raw_text = a.get("text")
+        if isinstance(raw_text, (list, tuple)):
+            text = [str(x).strip() for x in raw_text if str(x).strip()] or None
+        else:
+            text = [str(raw_text).strip()] if str(raw_text or "").strip() else None
         rect = a.get("rect")
-        if sel is None and rect is None:
-            errors.append(f"{ctx} ('{aid}'): define 'selector' o 'rect'")
+        opens = str(a.get("opens") or "").strip() or None
+        if sel is None and text is None and rect is None and opens is None:
+            errors.append(f"{ctx} ('{aid}'): define 'selector', 'text' o 'rect'")
         rect_t = None
         if rect is not None:
             try:
@@ -295,7 +351,7 @@ def study_from_dict(d: dict, path: str = "") -> Study:
                 tasks = None
         st.aois.append(AOIDef(
             id=aid, label=str(a.get("label", aid)), tasks=tasks,
-            selector=sel, rect=rect_t, space=space,
+            selector=sel, text=text, opens=opens, rect=rect_t, space=space,
             url_contains=a.get("url_contains") or None))
 
     # referencias cruzadas
@@ -303,6 +359,11 @@ def study_from_dict(d: dict, path: str = "") -> Study:
         if t.target_aoi and t.target_aoi not in aoi_ids:
             errors.append(f"tarea {t.id}: target_aoi '{t.target_aoi}' "
                           "no existe en 'aois'")
+    for t in st.tasks:
+        for fs in t.flow:
+            if fs.aoi and fs.aoi not in aoi_ids:
+                errors.append(f"tarea {t.id}: el paso '{fs.id}' usa el AOI "
+                              f"'{fs.aoi}', que no existe en 'aois'")
     for a in st.aois:
         for tid in (a.tasks or []):
             if tid not in seen_ids:
@@ -326,6 +387,7 @@ def study_from_dict(d: dict, path: str = "") -> Study:
     st.aoi_margin_px = float(_num(an, "aoi_margin_px", 0.0, errors, "analysis", 0) or 0.0)
     st.min_fixation_ms = float(_num(an, "min_fixation_ms", 150.0, errors, "analysis", 50) or 150.0)
     st.heatmap_sigma_px = float(_num(an, "heatmap_sigma_px", 55.0, errors, "analysis", 5) or 55.0)
+    st.click_correction = bool(an.get("click_correction", True))
 
     st.show_gaze_overlay = bool(d.get("show_gaze_overlay", False))
     panel = d.get("task_panel", {}) or {}
@@ -335,6 +397,7 @@ def study_from_dict(d: dict, path: str = "") -> Study:
         pos = "bottom"
     st.task_panel_position = pos
     st.capture_screenshots = bool(d.get("capture_screenshots", True))
+    st.page_capture = bool(d.get("page_capture", True))
     st.final_validation = bool(d.get("final_validation", True))
     st.review_at_end = bool(d.get("review_at_end", False))
 
@@ -353,7 +416,7 @@ def study_from_dict(d: dict, path: str = "") -> Study:
         if "REEMPLAZAR" in f"{t.title} {t.instruction} {t.start_url or ''}":
             st.pending.append(f"tarea {t.id}")
     for a in st.aois:
-        if "REEMPLAZAR" in str(a.selector or ""):
+        if "REEMPLAZAR" in f"{a.selector or ''} {' '.join(a.text or [])}":
             st.pending.append(f"AOI «{a.id}»")
     if any("REEMPLAZAR" in h for h in st.bridge_hosts):
         st.pending.append("bridge.hosts")

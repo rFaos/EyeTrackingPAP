@@ -48,6 +48,75 @@ _MAX_PAGE_W = 1600               # tope de ancho del mapa de página (px)
 _MAX_PAGE_H = 7000               # tope de alto
 
 
+def _shots_dir(csv_path: str) -> str:
+    from .session_meta import shots_dir_for
+    return shots_dir_for(csv_path)
+
+
+def _sin_hash(url) -> str:
+    return str(url or "").split("#")[0]
+
+
+# Fuentes del sistema con acentos (la de Pillow por defecto no los tiene)
+_FUENTES = [
+    os.path.join(os.environ.get("WINDIR", "C:/Windows"), "Fonts", "segoeui.ttf"),
+    os.path.join(os.environ.get("WINDIR", "C:/Windows"), "Fonts", "arial.ttf"),
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/Library/Fonts/Arial.ttf", "/System/Library/Fonts/Helvetica.ttc",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+]
+
+
+def _font(size: int):
+    from PIL import ImageFont
+    for p in _FUENTES:
+        if os.path.exists(p):
+            try:
+                return ImageFont.truetype(p, size)
+            except Exception:
+                continue
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:                         # Pillow antiguo
+        return ImageFont.load_default()
+
+
+def _ascii(s) -> str:
+    """Texto para cv2.putText (sólo ASCII): quita acentos y comillas «»."""
+    import unicodedata
+    s = unicodedata.normalize("NFD", str(s or ""))
+    return "".join(c for c in s if ord(c) < 128 and not unicodedata.combining(c))
+
+
+def _with_header(img: np.ndarray, title: str, lines: List[str]) -> np.ndarray:
+    """
+    Añade ARRIBA de la imagen una franja blanca con título y explicación
+    (sin tapar la página).  Usa Pillow para que se vean acentos y «».
+    """
+    w = img.shape[1]
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        f_t, f_l = _font(22), _font(16)
+        alto = 20 + 30 + 24 * len(lines) + 10
+        band = Image.new("RGB", (w, alto), (255, 255, 255))
+        d = ImageDraw.Draw(band)
+        d.text((16, 14), title, fill=(20, 20, 20), font=f_t)
+        for i, ln in enumerate(lines):
+            d.text((16, 48 + 24 * i), ln, fill=(80, 80, 80), font=f_l)
+        d.line([(0, alto - 1), (w, alto - 1)], fill=(200, 200, 200), width=2)
+        band_bgr = cv2.cvtColor(np.asarray(band), cv2.COLOR_RGB2BGR)
+    except Exception:
+        alto = 30 + 22 * len(lines)
+        band_bgr = np.full((alto, w, 3), 255, dtype=np.uint8)
+        cv2.putText(band_bgr, title.encode("ascii", "ignore").decode(),
+                    (12, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (20, 20, 20), 2)
+        for i, ln in enumerate(lines):
+            cv2.putText(band_bgr, ln.encode("ascii", "ignore").decode(),
+                        (12, 46 + 22 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                        (80, 80, 80), 1)
+    return np.vstack([band_bgr, img])
+
+
 class HeatmapGenerator:
     """
     Genera heatmaps de densidad de fijaciones y dwell time.
@@ -203,9 +272,11 @@ class HeatmapGenerator:
     def render_scanpath(self, fixes: Sequence[Fix], size: Tuple[int, int],
                         bg: Optional[np.ndarray] = None,
                         aois: Optional[List[Rect]] = None,
-                        use_page: bool = False, scale: float = 1.0
+                        use_page: bool = False, scale: float = 1.0,
+                        labels: Optional[Dict[str, str]] = None
                         ) -> np.ndarray:
-        """Scanpath numerado.  La fijación 1 se marca como "lo primero"."""
+        """Scanpath numerado.  La fijación 1 se marca como "lo primero".
+        ``labels`` = {id_aoi: nombre legible} para rotular cada fijación."""
         w, h = int(size[0]), int(size[1])
         fixes = [f for f in fixes if self._has(f, use_page)]
         canvas = self._fit_bg(bg, w, h)
@@ -223,11 +294,16 @@ class HeatmapGenerator:
             r = max(10, min(40, int(fix.dur_ms / 20)))
             color = colors[i % len(colors)]
             if i < len(fixes) - 1:
+                largo = max(1.0, float(np.hypot(xy[i + 1][0] - cx,
+                                                xy[i + 1][1] - cy)))
                 cv2.arrowedLine(canvas, (cx, cy), xy[i + 1],
-                                (180, 180, 180), 2, tipLength=0.15)
+                                (90, 90, 90), 2, tipLength=min(0.3, 18.0 / largo))
             cv2.circle(canvas, (cx, cy), r, color, 2)
             cv2.circle(canvas, (cx, cy), 4, color, -1)
-            label = str(i + 1) + (f" {fix.primary_aoi}" if fix.primary_aoi else "")
+            aoi = fix.primary_aoi
+            if aoi and labels:
+                aoi = _ascii(labels.get(aoi, aoi))[:30]
+            label = str(i + 1) + (f" {aoi}" if aoi else "")
             cv2.putText(canvas, label, (cx + r + 4, cy + 6),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (50, 50, 50), 2)
 
@@ -274,10 +350,22 @@ class HeatmapGenerator:
                               an.fixes_for_task(t["task"])))
         scope.append((None, "", list(an.fixes)))     # sesión completa
 
+        con_vistas = False
         for t, suffix, fixes in scope:
             if not fixes:
                 continue
             tid = t["task"] if t else None
+            # Con capturas del navegador: imágenes sobre lo que vio (más
+            # claras que las de pantalla sobre fondo blanco).
+            if t is not None:
+                vistas = self.page_views(an, tid, fixes, out_prefix,
+                                         f"Tarea {tid}: {t['title']}")
+                if vistas:
+                    out += vistas
+                    con_vistas = True
+                    continue
+            elif con_vistas:
+                continue
             bg_path = backgrounds.get(tid) if tid is not None else None
             bg = self._load_bg(bg_path or fallback_bg)
             title = (f"{t['title']}" if t else "SESION COMPLETA")
@@ -320,6 +408,152 @@ class HeatmapGenerator:
                 out.append(self._save(
                     page_img, f"{out_prefix}{suffix}_pagina.png"))
         return out
+
+    # ════════════════════════════════════════════════════════════════════
+    #  Sobre lo que VIO el participante (capturas del navegador integrado)
+    # ════════════════════════════════════════════════════════════════════
+
+    def page_views(self, an: Analysis, task_id: int, fixes: Sequence[Fix],
+                   out_prefix: str, title: str, max_views: int = 3
+                   ) -> List[str]:
+        """
+        Heatmap y recorrido de la mirada sobre la PÁGINA tal como la vio el
+        participante: se pegan las capturas del navegador integrado en su
+        posición de scroll (la página completa, aunque haya bajado) y encima
+        se pintan las fijaciones en coordenadas de página.
+
+        Una pareja de imágenes por página visitada en la tarea (las
+        ``max_views`` con más tiempo de mirada):
+          ``…_tareaN_vistaK_calor.png``     dónde y cuánto miró
+          ``…_tareaN_vistaK_recorrido.png`` en qué orden
+        Devuelve [] si la sesión no tiene capturas de esa tarea.
+        """
+        shots_dir = _shots_dir(an.session.csv_path)
+        shots = [e for e in an.session.web
+                 if e.get("k") == "shot" and int(e.get("task") or 0) == task_id
+                 and os.path.exists(os.path.join(shots_dir, str(e.get("file"))))]
+        if not shots:
+            return []
+        por_url: Dict[str, List[dict]] = {}
+        for e in shots:
+            por_url.setdefault(_sin_hash(e.get("url")), []).append(e)
+
+        pf = [f for f in fixes if f.px is not None and f.py is not None]
+        fx_url: Dict[str, List[Fix]] = {}
+        for f in pf:
+            fx_url.setdefault(_sin_hash(an.resolver.url_at(f.start_ms)),
+                              []).append(f)
+        urls = sorted(por_url, key=lambda u: -sum(f.dur_ms
+                                                   for f in fx_url.get(u, [])))
+        out: List[str] = []
+        for k, url in enumerate(urls[:max_views], start=1):
+            fx = fx_url.get(url, [])
+            if not fx and len(urls) > 1:
+                continue
+            bg, s = self.stitch(por_url[url], shots_dir, fx)
+            h, w = bg.shape[:2]
+            ruta = url.split("://", 1)[-1][:70]
+            secs = sum(f.dur_ms for f in fx) / 1000.0
+
+            heat = self.render_density(fx, (w, h), bg, weighted=True,
+                                       markers=True, use_page=True, scale=s)
+            heat = _with_header(heat, f"{title} · Mapa de calor",
+                                [f"Página: {ruta}",
+                                 f"{len(fx)} fijaciones · {secs:.1f} s mirando. "
+                                 "Rojo = donde más tiempo miró; sin color = "
+                                 "casi no miró."])
+            out.append(self._save(heat, f"{out_prefix}_tarea{task_id}"
+                                        f"_vista{k}_calor.png"))
+
+            labels = ({a.id: a.label for a in an.study.aois}
+                      if an.study else None)
+            path = self.render_scanpath(fx[:40], (w, h), bg, use_page=True,
+                                        scale=s, labels=labels)
+            path = _with_header(path, f"{title} · Recorrido de la mirada",
+                                [f"Página: {ruta}",
+                                 "El número es el ORDEN (1 = lo primero que "
+                                 "miró); el círculo crece con el tiempo que "
+                                 "se quedó ahí."])
+            out.append(self._save(path, f"{out_prefix}_tarea{task_id}"
+                                        f"_vista{k}_recorrido.png"))
+        return out
+
+    def group_page_views(self, analyses: Sequence[Analysis], task_id: int,
+                         out_dir: str, title: str, max_views: int = 3
+                         ) -> List[str]:
+        """
+        Mapa de calor de TODO el grupo sobre la página real: de fondo, la
+        página reconstruida del participante con más capturas de esa vista;
+        encima, las fijaciones de todos (cada participante pesa lo mismo).
+        """
+        mejor: Dict[str, Tuple[str, List[dict]]] = {}
+        fx: Dict[str, List[List[Fix]]] = {}
+        for an in analyses:
+            sd = _shots_dir(an.session.csv_path)
+            por_url: Dict[str, List[dict]] = {}
+            for e in an.session.web:
+                if (e.get("k") == "shot" and int(e.get("task") or 0) == task_id
+                        and os.path.exists(os.path.join(sd, str(e.get("file"))))):
+                    por_url.setdefault(_sin_hash(e.get("url")), []).append(e)
+            for url, lst in por_url.items():
+                if len(lst) > len(mejor.get(url, ("", []))[1]):
+                    mejor[url] = (sd, lst)
+            mias: Dict[str, List[Fix]] = {}
+            for f in an.fixes_for_task(task_id):
+                if f.px is not None and f.py is not None:
+                    mias.setdefault(_sin_hash(an.resolver.url_at(f.start_ms)),
+                                    []).append(f)
+            for url, lst in mias.items():
+                fx.setdefault(url, []).append(lst)
+        urls = sorted((u for u in mejor if u in fx),
+                      key=lambda u: -sum(f.dur_ms for p in fx[u] for f in p))
+        out: List[str] = []
+        for k, url in enumerate(urls[:max_views], start=1):
+            sd, shots = mejor[url]
+            todas = [f for p in fx[url] for f in p]
+            bg, s = self.stitch(shots, sd, todas)
+            h, w = bg.shape[:2]
+            img = self.render_group(fx[url], (w, h), bg, weighted=True,
+                                    use_page=True, scale=s)
+            img = _with_header(
+                img, f"{title} · Mapa de calor del GRUPO (n={len(fx[url])})",
+                [f"Página: {url.split('://', 1)[-1][:70]}",
+                 "Cada participante pesa lo mismo. Rojo = donde más miró el "
+                 "grupo. Fondo: la página de un participante."])
+            out.append(self._save(img, os.path.join(
+                out_dir, f"heatmap_tarea{task_id}_vista{k}_grupo.png")))
+        return out
+
+    @staticmethod
+    def stitch(shots: Sequence[dict], shots_dir: str,
+               fixes: Sequence[Fix] = ()) -> Tuple[np.ndarray, float]:
+        """
+        Reconstruye la página pegando cada captura en su posición de scroll.
+        Devuelve (imagen, escala) con escala = px de la imagen / px CSS.
+        Las zonas que nunca se vieron quedan en gris.
+        """
+        W = max([float(e.get("sx") or 0) + float(e.get("iw") or 0)
+                 for e in shots] + [f.px or 0 for f in fixes] + [10.0])
+        H = max([float(e.get("sy") or 0) + float(e.get("ih") or 0)
+                 for e in shots] + [f.py or 0 for f in fixes] + [10.0])
+        s = min(1.0, _MAX_PAGE_W / W, _MAX_PAGE_H / H)
+        cw, ch = max(10, int(W * s)), max(10, int(H * s))
+        canvas = np.full((ch, cw, 3), 225, dtype=np.uint8)
+        for e in sorted(shots, key=lambda e: e.get("t_ms", 0)):
+            img = cv2.imread(os.path.join(shots_dir, str(e.get("file"))))
+            if img is None:
+                continue
+            iw, ih = float(e.get("iw") or 0), float(e.get("ih") or 0)
+            if iw <= 0 or ih <= 0:
+                continue
+            x0 = int(float(e.get("sx") or 0) * s)
+            y0 = int(float(e.get("sy") or 0) * s)
+            tw, th = max(1, int(iw * s)), max(1, int(ih * s))
+            img = cv2.resize(img, (tw, th), interpolation=cv2.INTER_AREA)
+            tw, th = min(tw, cw - x0), min(th, ch - y0)
+            if tw > 0 and th > 0:
+                canvas[y0:y0 + th, x0:x0 + tw] = img[:th, :tw]
+        return canvas, s
 
     def page_image(self, an: Analysis, fixes: Sequence[Fix],
                    task_id: Optional[int], weighted: bool = True
@@ -401,7 +635,7 @@ class HeatmapGenerator:
             if a.rect is not None and a.space == "page":
                 x, y, w, h = a.rect
                 out.append((a.label, x, y, x + w, y + h))
-            elif a.selector:
+            elif a.selector or a.text or a.opens:
                 best = None
                 for _ts, snapshots in an.resolver._layouts.values():  # noqa: SLF001
                     for m in snapshots:

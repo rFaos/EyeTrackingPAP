@@ -168,7 +168,7 @@ class TestPreparation(AppCase):
         self.assertEqual(str(a._cbo_group.cget("state")), "readonly")
         self.assertEqual(a._var_code.get(), "")       # sin código propuesto
         self.assertIsInstance(a._btn_start, main_app.FlatButton)
-        self.assertEqual(a.nb.index("end"), 4)        # Guía + 3 pestañas
+        self.assertEqual(a.nb.index("end"), 3)        # Guía, Prueba, Resultados
 
     def test_cannot_start_without_calibration_or_group(self):
         a = self.app
@@ -234,7 +234,7 @@ class TestFullSession(AppCase):
         a._do_start()
         self.assertTrue(a._session_active)
         self.assertIsNotNone(a.panel)
-        self.assertTrue(a._btn_stop.cget("text").endswith("Terminar sesión"))
+        self.assertTrue(a._btn_stop.cget("text").endswith("Terminar"))
         self.assertEqual(post("vp", sy=0, **VP)["rec"], True)
         # el puente dice qué tarea está en curso (0 antes de "Comenzar")
         self.assertEqual(post("vp", sy=0, **VP)["task"], 0)
@@ -322,7 +322,7 @@ class TestFullSession(AppCase):
         self.assertGreaterEqual(t[1]["n_clicks"], 1)
         # la calibración quedó marcada como pendiente para el siguiente
         self.assertIsNone(a._cal_code)
-        self.assertTrue(a._btn_start.cget("text").endswith("Iniciar sesión"))
+        self.assertTrue(a._btn_start.cget("text").endswith("Empezar la prueba"))
         self.assertEqual(a._var_code.get(), "")       # el siguiente escribe el suyo
         self.assertEqual(a._lst.size(), 1)
         self.assertIn("válida", a._lst.get(0))

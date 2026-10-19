@@ -95,7 +95,7 @@ class TestStudy(unittest.TestCase):
             })
         msg = str(cm.exception)
         for frag in ("'id' es obligatorio", "falta 'instruction'", "repetido",
-                     "define 'selector' o 'rect'", "ancho y alto > 0",
+                     "define 'selector', 'text' o 'rect'", "ancho y alto > 0",
                      "tarea 9"):
             self.assertIn(frag, msg)
 
@@ -122,6 +122,42 @@ class TestStudy(unittest.TestCase):
             "aois": [{"id": "a", "rect": [192, 108, 384, 216]}]})
         r = st.aoi("a").screen_rect(1280, 720, 1920, 1080)
         self.assertEqual(r, (128.0, 72.0, 384.0, 216.0))
+
+    def test_text_aois_reach_the_browser(self):
+        st = study_from_dict({
+            "id": "x", "tasks": [{"id": 1, "instruction": "i"}],
+            "aois": [{"id": "a", "text": "Mis Solicitudes",
+                      "selector": "section"},
+                     {"id": "b", "text": ["Apps", " Accesos "]},
+                     {"id": "c", "rect": [0, 0, 10, 10]}]})
+        self.assertEqual(st.aoi("a").text, ["Mis Solicitudes"])
+        self.assertEqual(st.aoi("b").text, ["Apps", "Accesos"])
+        cfg = {a["id"]: a for a in st.bridge_config()}
+        self.assertEqual(set(cfg), {"a", "b"})      # el rect no va al navegador
+        self.assertEqual(cfg["a"]["selector"], "section")
+        self.assertIsNone(cfg["b"]["selector"])
+
+    def test_ventana_amarilla_follows_the_task_flows(self):
+        st = load_study(os.path.join(STUDIES, "ventana_amarilla.json"))
+        self.assertEqual(st.pending, [])
+        self.assertEqual([t.target_aoi for t in st.tasks],
+                         ["obj_t1", "obj_t2", "obj_t3"])
+        self.assertIn("Trayecto UDEM", st.tasks[0].instruction)
+        self.assertIn("Encuesta Avanza", st.tasks[1].instruction)
+        self.assertEqual(st.aoi("obj_t3").text, ["Mis Solicitudes"])
+        self.assertIn("udemsnprod.service-now.com", st.allowed_hosts())
+        self.assertTrue(all("service-now.com/ventana_amarilla" in t.start_url
+                            for t in st.tasks))
+
+    def test_never_inject_on_login_pages(self):
+        from et_suite.navegador import host_permitido
+        hosts = ["udemsnprod.service-now.com"]
+        base = "https://udemsnprod.service-now.com"
+        self.assertTrue(host_permitido(base + "/ventana_amarilla?id=x", hosts))
+        for ruta in ("/login.do", "/login_with_sso.do", "/logout.do",
+                     "/auth_redirect.do"):
+            self.assertFalse(host_permitido(base + ruta, hosts), ruta)
+        self.assertFalse(host_permitido("https://login.udem.edu/x", hosts))
 
 
 class _LM:
@@ -262,6 +298,29 @@ class TestBridge(unittest.TestCase):
         b2 = WebBridge(lambda *a: True, lambda: {}, port=self.br.port)
         self.assertFalse(b2.start())
         self.assertIn("ocupado", b2.last_error)
+
+
+class TestBridgeSinRed(unittest.TestCase):
+    """Modo normal con el navegador integrado: ningún puerto abierto."""
+
+    def test_no_port_and_events_arrive_by_receive_raw(self):
+        got = []
+        br = WebBridge(lambda k, p, t: got.append((k, p)) or True,
+                       lambda: {"rec": True, "task": 3}, port=0)
+        self.assertTrue(br.start(listen=False))
+        self.assertTrue(br.is_running)
+        self.assertFalse(br.listening)
+        ack = br.receive_raw(json.dumps({"k": "click", "x": 5}))
+        self.assertEqual(ack, {"ok": True, "rec": True, "task": 3})
+        self.assertEqual(got[0][0], "click")
+        self.assertIsNotNone(br.seconds_since_last_event())
+        for raw in ("no json", json.dumps({"k": "hack"}), "[1]",
+                    "x" * (300 * 1024)):
+            with self.assertRaises(ValueError):
+                br.receive_raw(raw)
+        self.assertEqual(len(got), 1)
+        br.stop()
+        self.assertFalse(br.is_running)
 
 
 if __name__ == "__main__":
