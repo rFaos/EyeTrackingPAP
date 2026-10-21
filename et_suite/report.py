@@ -193,6 +193,7 @@ def _build(an: Analysis, n_first: int) -> str:
                          f"{t['flow_total']} pasos del camino esperado")
                 for i, p in enumerate(t["flow"], start=1):
                     estado = (f"✓ {p['t_s']:5.1f} s" if p["done"]
+                              else "— sin datos" if p["done"] is None
                               else "✗ no lo hizo")
                     L.append(f"     {i}. {p['label']:<48} {estado}")
         for t in tasks:

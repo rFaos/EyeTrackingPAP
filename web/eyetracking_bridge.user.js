@@ -39,7 +39,8 @@
   var BASE = 'http://127.0.0.1:4243';
   var HEARTBEAT_MS = 2000;     // reenvío periódico del estado
   var SCROLL_MS = 80;          // máx. ~12 mensajes de scroll por segundo
-  var MUTATION_MS = 600;       // espera tras cambios del DOM antes de medir
+  var MUTATION_MS = 150;       // espera tras cambios del DOM antes de medir
+  var MOUSE_MS = 250;          // posición del ratón: máx. 4 por segundo
 
   var gm = (typeof GM_xmlhttpRequest === 'function') ? GM_xmlhttpRequest
          : (typeof GM !== 'undefined' && GM && GM.xmlHttpRequest) ? GM.xmlHttpRequest.bind(GM)
@@ -135,6 +136,22 @@
   // ``a.text`` (o cualquiera de sus textos, si es una lista).  Con ``a.selector`` sube al contenedor más cercano que lo
   // cumpla.  Prefiere uno visible; entre varios, el más pequeño (el más
   // específico).
+  // Bloque que rodea a un título: se sube mientras el antepasado siga
+  // siendo «poco más que el título» (para incluir el contenido de debajo),
+  // sin llegar a la página entera.
+  function bloque(el) {
+    var r0 = el.getBoundingClientRect(), best = el;
+    var pageH = Math.max(document.documentElement.scrollHeight, 1);
+    for (var n = el.parentElement, k = 0; n && n !== document.body && k < 8;
+         n = n.parentElement, k++) {
+      var r = n.getBoundingClientRect();
+      if (r.height > pageH * 0.6 || r.width * r.height > 900000) break;
+      best = n;
+      if (r.height >= Math.max(150, r0.height * 4)) break;
+    }
+    return best;
+  }
+
   function findByText(a) {
     var needles = [].concat(a.text).map(norm).filter(Boolean);
     if (!needles.length || !document.body) return null;
@@ -147,7 +164,10 @@
     function add(el) {
       if (!el || el.nodeType !== 1) return;
       if (a.selector) {
-        try { el = el.closest(a.selector); } catch (e) { el = null; }
+        var c = null;
+        try { c = el.closest(a.selector); } catch (e) { c = null; }
+        if (!c && a.grow) c = bloque(el);
+        el = c;
         if (!el) return;
       }
       if (found.indexOf(el) < 0) found.push(el);
@@ -245,6 +265,19 @@
            ph: Math.max(de.scrollHeight, b.scrollHeight) });
   }
 
+  // ── Ratón (sólo durante una tarea): para saber si pasó por encima de un
+  // menú que se abre con «hover», sin necesidad de clic ───────────────────
+  var lastMouse = null, lastMouseT = 0;
+  window.addEventListener('mousemove', function (e) {
+    if (!cfg.rec || !cfg.task) return;
+    var now = Date.now();
+    if (now - lastMouseT < MOUSE_MS) return;
+    if (lastMouse && Math.abs(e.clientX - lastMouse[0]) + Math.abs(e.clientY - lastMouse[1]) < 8) return;
+    lastMouseT = now; lastMouse = [e.clientX, e.clientY];
+    send({ k: 'mouse', x: e.clientX, y: e.clientY,
+           px: Math.round(e.pageX), py: Math.round(e.pageY) });
+  }, { passive: true, capture: true });
+
   // ── Clics y navegación ──────────────────────────────────────────────────
   function describe(el) {
     if (!el || el.nodeType !== 1) return {};
@@ -297,7 +330,10 @@
     if (window.MutationObserver) {
       var mt = null;
       new MutationObserver(function () {
-        clearTimeout(mt); mt = setTimeout(sendLayout, MUTATION_MS);
+        // Limitador (no «debounce»): con carruseles animados el DOM cambia
+        // sin parar y un debounce no llegaba a medir nunca; así un menú que
+        // se abre al pasar el ratón se detecta en ~0.15 s.
+        if (!mt) mt = setTimeout(function () { mt = null; sendLayout(); }, MUTATION_MS);
       }).observe(document.documentElement, { childList: true, subtree: true, attributes: true });
     }
     var lastHref = location.href;

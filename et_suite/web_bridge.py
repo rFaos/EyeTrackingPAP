@@ -50,7 +50,7 @@ from typing import Callable, Dict, Optional
 from urllib.parse import parse_qs, urlparse
 
 MAX_BODY = 256 * 1024     # 256 KB por evento
-VALID_KINDS = ("vp", "layout", "click", "nav", "vis", "shot")
+VALID_KINDS = ("vp", "layout", "click", "nav", "vis", "shot", "mouse")
 
 
 class _Server(ThreadingHTTPServer):

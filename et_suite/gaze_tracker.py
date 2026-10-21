@@ -703,7 +703,13 @@ class GazeCalibrator:
             if len(group) < 6:
                 kept.extend(group)      # muy pocas muestras: no filtrar
                 continue
-            arr = np.array([s["out"] for s in group])
+            # Con lentes o reflejos, algunos fotogramas no traen datos 3D:
+            # entonces "out" tiene otra longitud y np.array fallaba (la
+            # calibración se caía).  Se filtra con el vector común.
+            if len({len(s["out"]) for s in group}) > 1:
+                arr = np.array([s["raw"] for s in group])
+            else:
+                arr = np.array([s["out"] for s in group])
             med = np.median(arr, axis=0)
             mad = np.median(np.abs(arr - med), axis=0)
             mad = np.where(mad < 1e-6, 1e-6, mad)
@@ -774,20 +780,38 @@ class GazeCalibrator:
         if len(rows) < 6:
             return False
 
+        # Atenuación por ruido: el iris de una webcam tiene 2–4 px de ruido.
+        # Si se ajusta con CADA muestra, ese ruido en la variable de entrada
+        # encoge la pendiente y la mirada estimada se va hacia el centro (en
+        # el simulador, la vertical quedaba al 40–60 % de su tamaño real y
+        # el error subía a ~300 px).  Por eso el ajuste se hace con la
+        # MEDIANA de cada punto de calibración: el ruido casi desaparece y la
+        # escala queda bien.  El RMS que se informa es el de esas medianas,
+        # que es el error a nivel de fijación (lo que mide la verificación).
+        tids = sorted({s["tid"] for s in rows})
+
         def solve_at(Z: float):
             A, bx, by = [], [], []
-            for s in rows:
-                E, d = s["geo"]
-                dz = float(d[2])
-                if abs(dz) < 1e-9:
-                    return None
-                lam = (Z - float(E[2])) / dz
-                if lam <= 0:
-                    return None
-                P = E + lam * d
+            for tid in tids:
+                Ps = []
+                for s in rows:
+                    if s["tid"] != tid:
+                        continue
+                    E, d = s["geo"]
+                    dz = float(d[2])
+                    if abs(dz) < 1e-9:
+                        return None
+                    lam = (Z - float(E[2])) / dz
+                    if lam <= 0:
+                        return None
+                    Ps.append(E + lam * d)
+                    tx, ty = s["tx"], s["ty"]
+                P = np.median(np.array(Ps), axis=0)
                 A.append([float(P[0]) / 1000.0, float(P[1]) / 1000.0, 1.0])
-                bx.append(s["tx"])
-                by.append(s["ty"])
+                bx.append(tx)
+                by.append(ty)
+            if len(A) < 4:
+                return None
             A = np.array(A)
             bx = np.array(bx, np.float64)
             by = np.array(by, np.float64)

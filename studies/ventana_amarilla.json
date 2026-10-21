@@ -25,7 +25,7 @@
       "time_limit_s": 180,
       "start_url": "https://udemsnprod.service-now.com/ventana_amarilla",
       "flow": [
-        { "id": "clic_cuadricula", "label": "Clic en el ícono de cuadrícula (3×3)", "click": "icono_cuadricula" },
+        { "id": "usa_cuadricula", "label": "Pasa el ratón o hace clic en el ícono de cuadrícula (3×3)", "point": "icono_cuadricula" },
         { "id": "menu_abierto",    "label": "Se despliega el menú de accesos directos", "visible": "menu_accesos" },
         { "id": "clic_trayecto",   "label": "Clic en «Trayecto UDEM»", "click": "obj_t1" },
         { "id": "abre_trayecto",   "label": "Se abre la plataforma Trayecto UDEM", "leave_site": true }
@@ -84,16 +84,16 @@
       "id": "obj_t2", "label": "Enlace «Encuesta Avanza» (resultados)", "text": "Encuesta Avanza",
       "selector": "a, button, [role=option], [role=link], [role=button], li", "tasks": [2] },
 
-    { "_nota": "Tarea 3. Bloques intermedios por los que se pasa al bajar, y el panel final. 'selector' = contenedor del bloque; si no se encuentra, quita el 'selector' para medir sólo el título.",
+    { "_nota": "Tarea 3. Bloques intermedios por los que se pasa al bajar, y el panel final. 'selector' = contenedor del bloque (en ServiceNow cada bloque es un 'sp-widget' o un '.panel'); así el AOI abarca título y contenido, no sólo el título.",
       "id": "bloque_vida_academica", "label": "Bloque «Vida académica»", "text": "Vida académica",
-      "selector": "section, article, [role=region], [class*='card' i], [class*='panel' i], [class*='widget' i]",
-      "tasks": [3] },
+      "selector": "sp-widget, .panel, .card, section, article, [role=region]",
+      "grow": true, "tasks": [3] },
     { "id": "bloque_servicios_escolares", "label": "Bloque «Servicios escolares»", "text": "Servicios escolares",
-      "selector": "section, article, [role=region], [class*='card' i], [class*='panel' i], [class*='widget' i]",
-      "tasks": [3] },
+      "selector": "sp-widget, .panel, .card, section, article, [role=region]",
+      "grow": true, "tasks": [3] },
     { "id": "obj_t3", "label": "Panel «Mis Solicitudes»", "text": "Mis Solicitudes",
-      "selector": "section, article, table, [role=region], [class*='card' i], [class*='panel' i], [class*='widget' i]",
-      "tasks": [3] }
+      "selector": "sp-widget, .panel, .card, section, article, [role=region]",
+      "grow": true, "tasks": [3] }
   ],
 
   "quality": {

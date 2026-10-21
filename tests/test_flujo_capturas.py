@@ -192,6 +192,47 @@ class TestFlujoYCapturas(unittest.TestCase):
         self.assertAlmostEqual(fx[0].cx, 400, delta=50)
         self.assertAlmostEqual(fx[0].cy, 300 + 100, delta=50)
 
+    def test_hover_opens_menu_counts_without_click(self):
+        st = study_from_dict({
+            "id": "hover", "url": URL,
+            "tasks": [{"id": 1, "instruction": "i", "flow": [
+                {"id": "p", "label": "Ratón o clic en cuadrícula",
+                 "point": "menu_btn"},
+                {"id": "v", "label": "Menú abierto", "visible": "menu"}]}],
+            "aois": [{"id": "menu_btn", "opens": "Trayecto UDEM"},
+                     {"id": "menu", "text": "Trayecto UDEM"}]})
+        web = [_vp(T0, 0), _layout(T0, False),
+               {"t_ms": T1 + 300, "k": "mouse", "url": URL, "x": 100,
+                "y": 45, "px": 100, "py": 45},          # encima del ícono
+               _layout(T1 + 500, True)]                  # se abre solo
+        csv = write_session(os.path.join(self.tmp, "h"), "P03", st,
+                            {1: [(500, 500, 1.5)]}, web=web)
+        t = analyze_csv(csv, st).metrics["tasks"][0]
+        self.assertEqual([p["done"] for p in t["flow"]], [True, True])
+
+    def test_look_counts_within_measured_precision(self):
+        # La mirada cae 150 px por debajo del panel; con ±250 px de error
+        # medido, cuenta como «mirar el panel».
+        st = study_from_dict({
+            "id": "look", "url": URL,
+            "tasks": [{"id": 1, "instruction": "i", "flow": [
+                {"id": "m", "label": "Mira el panel", "look": "panel"}]}],
+            "aois": [{"id": "panel", "text": "Mis Solicitudes"}]})
+        web = [_vp(T0, 0), _layout(T0, False)]
+        script = {1: [(960, 100 + 600 + 150, 1.5)]}     # panel y 0..600
+        kw = dict(web=web, noise=5.0,
+                  scroll_fn=lambda x, y, t: {"sx": 0, "sy": 0, "px": x,
+                                             "py": y - 100 + 3000 - 3000})
+        lay = dict(_layout(T0, False))
+        lay["aois"] = [{"id": "panel", "x": 0, "y": 0, "w": 1900, "h": 600,
+                        "fixed": False, "vis": True}]
+        kw["web"] = [_vp(T0, 0), lay]
+        for err, esperado in ((300.0, True), (40.0, False)):
+            csv = write_session(os.path.join(self.tmp, f"l{int(err)}"),
+                                "P04", st, script, val_post=err, **kw)
+            t = analyze_csv(csv, st).metrics["tasks"][0]
+            self.assertEqual(t["flow"][0]["done"], esperado, err)
+
     def test_flow_with_unknown_aoi_is_rejected(self):
         with self.assertRaises(StudyError):
             study_from_dict({"id": "x", "tasks": [

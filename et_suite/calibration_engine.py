@@ -243,6 +243,12 @@ class CalibrationEngine:
             extra = ""
             if weak:
                 extra = f"   ·   puntos con poca señal: {', '.join(map(str, weak))}"
+            if rms >= 250:
+                # Lo que más mejora la precisión con webcam, en orden
+                extra += ("   ·   Para mejorar: luz de frente (no detrás), "
+                          "cámara a la altura de los ojos, ~60 cm, lentes "
+                          "sin reflejos (o sin lentes si ves bien) y la "
+                          "cabeza quieta")
             self._lbl.config(text=msg, fg=col)
             self._prog.config(
                 text=f"{self.calibrator.n_samples} muestras útiles{extra}",
@@ -334,7 +340,7 @@ class CalibrationEngine:
                               font=("Segoe UI", 13))
         self._stat.place(relx=0.5, rely=0.70, anchor="center")
 
-        self._prog = tk.Label(root, text="", fg=_DIM, bg=_BG,
+        self._prog = tk.Label(root, text="", fg=_DIM, bg=_BG, wraplength=1100,
                               font=("Segoe UI", 15))
         self._prog.place(relx=0.5, rely=0.75, anchor="center")
 

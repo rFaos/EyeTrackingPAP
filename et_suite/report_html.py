@@ -147,9 +147,10 @@ def build_html(an: Analysis, images: List[str]) -> str:
                        + (" ✓" if t["flow_complete"] else "") + "</p>"
                        "<ol class='flow'>")
             for i, p in enumerate(t["flow"], start=1):
-                out.append(f"<li class='{'ok' if p['done'] else 'no'}'>"
-                           f"{'✓' if p['done'] else '✗'} {i}. {_e(p['label'])}"
-                           f"<span class='t'>{_fmt_s(p['t_s']) if p['done'] else 'no lo hizo'}"
+                sin = p["done"] is None
+                out.append(f"<li class='{'ok' if p['done'] else ('' if sin else 'no')}'>"
+                           f"{'✓' if p['done'] else ('–' if sin else '✗')} {i}. {_e(p['label'])}"
+                           f"<span class='t'>{_fmt_s(p['t_s']) if p['done'] else ('sin datos' if sin else 'no lo hizo')}"
                            "</span></li>")
             out.append("</ol>")
         if len(t.get("hosts") or []) > 1:

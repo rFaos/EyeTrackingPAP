@@ -557,7 +557,8 @@ def _sin_hash(url: Optional[str]) -> str:
 
 def evaluate_flow(steps, study: Optional[Study], session: Session,
                   resolver: "AOIResolver", tfix: List[Fix],
-                  s_ms: Optional[float], e_ms: Optional[float]) -> List[Dict]:
+                  s_ms: Optional[float], e_ms: Optional[float],
+                  err_px: Optional[float] = None) -> List[Dict]:
     """
     Evalúa los pasos del flujo esperado de una tarea con lo que registró el
     navegador (clics, diseño, scroll, páginas) y la mirada.
@@ -578,8 +579,32 @@ def evaluate_flow(steps, study: Optional[Study], session: Session,
         m = resolver.layout_at(url, t).get(aoi)
         return m if m and m.get("vis", True) else None
 
+    def dentro(m: dict, e: dict, margen: float = 4.0) -> bool:
+        x, y = ((e.get("x"), e.get("y")) if m.get("fixed")
+                else (e.get("px"), e.get("py")))
+        return (x is not None and y is not None
+                and m["x"] - margen <= x <= m["x"] + m["w"] + margen
+                and m["y"] - margen <= y <= m["y"] + m["h"] + margen)
+
+    # «Mirar» con webcam: una fijación a menos de ~el error medido del AOI
+    # cuenta como mirarlo (si no, con 250 px de error casi nunca «se mira»
+    # un panel aunque el participante lo esté leyendo).
+    margen_mirada = min(250.0, 0.75 * float(err_px)) if err_px else 0.0
+
+    hay_raton = any(e.get("k") == "mouse" for e in session.web)
+
     def hit(st, t0: float) -> Optional[float]:
         a_def = study.aoi(st.aoi) if (study and st.aoi) else None
+        if st.kind in ("hover", "point"):
+            for e in web:
+                if e["t_ms"] < t0:
+                    continue
+                if e["k"] == "mouse" or (st.kind == "point"
+                                         and e["k"] == "click"):
+                    m = rect(st.aoi, e.get("url"), e["t_ms"])
+                    if m and dentro(m, e, 6.0):
+                        return e["t_ms"]
+            return None
         if st.kind == "click":
             textos = [_norm_txt(x) for x in (a_def.text or [])] if a_def else []
             for e in web:
@@ -617,8 +642,18 @@ def evaluate_flow(steps, study: Optional[Study], session: Session,
                     return e["t_ms"]
         elif st.kind == "look":
             for f in tfix:
-                if f.start_ms >= t0 and st.aoi in f.aois:
+                if f.start_ms < t0:
+                    continue
+                if st.aoi in f.aois:
                     return f.start_ms
+                if margen_mirada and f.px is not None:
+                    m = rect(st.aoi, resolver.url_at(f.start_ms), f.start_ms)
+                    if m and not m.get("fixed"):
+                        if (m["x"] - margen_mirada <= f.px
+                                <= m["x"] + m["w"] + margen_mirada
+                                and m["y"] - margen_mirada <= f.py
+                                <= m["y"] + m["h"] + margen_mirada):
+                            return f.start_ms
         elif st.kind == "navigate":
             for e in web:
                 if (e["k"] == "nav" and e["t_ms"] >= t0
@@ -640,8 +675,11 @@ def evaluate_flow(steps, study: Optional[Study], session: Session,
         t = hit(st, t_prev)
         if t is not None:
             t_prev = t
+        done: Optional[bool] = t is not None
+        if not done and st.kind in ("hover", "point") and not hay_raton:
+            done = None          # sesión grabada sin datos del ratón
         out.append({"id": st.id, "label": st.label, "kind": st.kind,
-                    "aoi": st.aoi, "done": t is not None,
+                    "aoi": st.aoi, "done": done,
                     "t_s": ((t - s_ms) / 1000.0) if t is not None else None})
     return out
 
@@ -870,11 +908,16 @@ def analyze_session(session: Session,
 
         # Flujo esperado (pasos del diagrama de la tarea)
         steps = t_def.flow if t_def else []
+        err_flow = (session_m.get("val_post_px")
+                    or session_m.get("val_pre_px"))
+        cc_ = session_m.get("click_correction") or {}
+        if cc_.get("applied") and cc_.get("err_after_px"):
+            err_flow = cc_["err_after_px"]
         tm["flow"] = (evaluate_flow(steps, study, session, resolver, tfix,
-                                    s_ms, e_ms) if steps else [])
+                                    s_ms, e_ms, err_flow) if steps else [])
         tm["flow_done"] = sum(1 for p in tm["flow"] if p["done"])
         tm["flow_total"] = len(tm["flow"])
-        tm["flow_complete"] = (tm["flow_done"] == tm["flow_total"]
+        tm["flow_complete"] = (all(p["done"] is not False for p in tm["flow"])
                                if tm["flow"] else None)
         task_ms.append(tm)
 

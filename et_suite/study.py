@@ -82,12 +82,15 @@ class Task:
 # Tipos de paso de un flujo (``"flow"`` de una tarea).  Cada paso tiene UNA
 # de estas claves; se evalúan en orden, cada uno después del anterior:
 #   "click": aoi       clic sobre ese AOI (o sobre su texto)
+#   "hover": aoi       el ratón pasa por encima del AOI
+#   "point": aoi       clic O ratón encima (menús que se abren con «hover»)
 #   "visible": aoi     el AOI aparece en pantalla (p. ej. se abre un menú)
 #   "scroll_to": aoi   el participante desplaza la página hasta verlo
 #   "look": aoi        fija la mirada en el AOI
 #   "navigate": true   se carga otra página (cambia la URL)
 #   "leave_site": true se abre un sitio de OTRO dominio (p. ej. Trayecto UDEM)
-FLOW_KINDS = ("click", "visible", "scroll_to", "look", "navigate", "leave_site")
+FLOW_KINDS = ("click", "hover", "point", "visible", "scroll_to", "look",
+              "navigate", "leave_site")
 
 
 @dataclass
@@ -106,6 +109,7 @@ class AOIDef:
     selector: Optional[str] = None
     text: Optional[List[str]] = None      # texto visible del elemento (alguno)
     opens: Optional[str] = None           # botón que abre el menú con ese texto
+    grow: bool = False                    # sin contenedor: el bloque del texto
     rect: Optional[Tuple[float, float, float, float]] = None
     space: str = "viewport"               # "viewport" | "page"
     url_contains: Optional[str] = None    # sólo vale en URLs que lo incluyan
@@ -191,7 +195,8 @@ class Study:
     def bridge_config(self) -> List[dict]:
         """AOI por selector/texto, en el formato que consume el script del navegador."""
         return [{"id": a.id, "selector": a.selector, "text": a.text,
-                 "opens": a.opens, "url_contains": a.url_contains}
+                 "opens": a.opens, "grow": a.grow,
+                 "url_contains": a.url_contains}
                 for a in self.aois if a.selector or a.text or a.opens]
 
     def allowed_hosts(self) -> List[str]:
@@ -288,8 +293,8 @@ def study_from_dict(d: dict, path: str = "") -> Study:
                               + ", ".join(FLOW_KINDS))
                 continue
             kind = kinds[0]
-            aoi = fs[kind] if kind in ("click", "visible", "scroll_to",
-                                       "look") else None
+            aoi = fs[kind] if kind in ("click", "hover", "point", "visible",
+                                       "scroll_to", "look") else None
             flow.append(FlowStep(id=str(fs.get("id") or f"paso{j}"),
                                  label=str(fs.get("label") or f"Paso {j}"),
                                  kind=kind, aoi=str(aoi) if aoi else None))
@@ -351,7 +356,8 @@ def study_from_dict(d: dict, path: str = "") -> Study:
                 tasks = None
         st.aois.append(AOIDef(
             id=aid, label=str(a.get("label", aid)), tasks=tasks,
-            selector=sel, text=text, opens=opens, rect=rect_t, space=space,
+            selector=sel, text=text, opens=opens, grow=bool(a.get("grow")),
+            rect=rect_t, space=space,
             url_contains=a.get("url_contains") or None))
 
     # referencias cruzadas

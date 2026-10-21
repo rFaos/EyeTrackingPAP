@@ -1,6 +1,8 @@
 """Pruebas de los módulos base: geometría, estudio, parpadeos y puente web."""
 
 import json
+
+import numpy as np
 import os
 import tempfile
 import unittest
@@ -321,6 +323,53 @@ class TestBridgeSinRed(unittest.TestCase):
         self.assertEqual(len(got), 1)
         br.stop()
         self.assertFalse(br.is_running)
+
+
+class TestCalibrador(unittest.TestCase):
+    """Ajuste con medianas por punto: sin «encoger» la mirada al centro."""
+
+    @staticmethod
+    def _feat(tx, ty, rng, ruido, geo=True):
+        # Mirada 3D sintética: el rayo corta el plano Z=0 en un punto
+        # proporcional al objetivo (+ ruido de iris).
+        E = np.array([0.0, 0.0, 550.0])
+        P = np.array([(tx - 960) * 0.28, (ty - 540) * 0.28, 0.0])
+        P[:2] += rng.normal(0, ruido, 2)
+        d = (P - E) / np.linalg.norm(P - E)
+        f = {"gx": 0.0, "gy": 0.0, "yaw": 0, "pitch": 0, "roll": 0,
+             "p_yaw": 0, "p_pitch": 0, "fdx": 0, "fdy": 0, "geom_ok": geo}
+        if geo:
+            f.update(Ex=E[0], Ey=E[1], Ez=E[2], dx=d[0], dy=d[1], dz=d[2])
+        return f
+
+    def test_noisy_iris_keeps_scale(self):
+        from et_suite.gaze_tracker import GazeCalibrator
+        rng = np.random.default_rng(0)
+        cal = GazeCalibrator(1920, 1080, n_points=9, method="geometric")
+        for tid, (fx, fy) in enumerate(cal.TARGETS_9):
+            for _ in range(30):
+                cal.add_sample(self._feat(fx * 1920, fy * 1080, rng, 60.0),
+                               fx * 1920, fy * 1080, tid)
+        self.assertTrue(cal.train())
+        # Predicción del punto (sin ruido) en las esquinas: sin encogerse
+        px, py = cal.predict(self._feat(192, 108, rng, 0.0))
+        self.assertLess(abs(px - 192), 60)
+        self.assertLess(abs(py - 108), 60)
+        px, py = cal.predict(self._feat(1728, 972, rng, 0.0))
+        self.assertLess(abs(px - 1728), 60)
+        self.assertLess(abs(py - 972), 60)
+
+    def test_frames_without_3d_do_not_break_calibration(self):
+        # Con lentes, algunos fotogramas no traen datos 3D (antes fallaba)
+        from et_suite.gaze_tracker import GazeCalibrator
+        rng = np.random.default_rng(1)
+        cal = GazeCalibrator(1920, 1080, n_points=9, method="geometric")
+        for tid, (fx, fy) in enumerate(cal.TARGETS_9):
+            for i in range(20):
+                cal.add_sample(self._feat(fx * 1920, fy * 1080, rng, 5.0,
+                                          geo=(i % 4 != 0)),
+                               fx * 1920, fy * 1080, tid)
+        self.assertTrue(cal.train())
 
 
 if __name__ == "__main__":

@@ -374,6 +374,8 @@ class _Capturador:
         self.t_vp = 0.0               # último CAMBIO de scroll/tamaño
         self.t_layout = 0.0           # último cambio de diseño (menú, modal…)
         self.firma_layout = ""
+        self.n_vis = 0                # AOI visibles (sube al abrir un menú)
+        self.urgente = False          # capturar YA (apareció un menú)
         self.vistos: dict = {}
         self.n: dict = {}
         self.ultimo = 0.0
@@ -409,8 +411,19 @@ class _Capturador:
                 firma = json.dumps([(a.get("id"), a.get("vis"), a.get("w"),
                                      a.get("h")) for a in d.get("aois", [])])
                 if firma != self.firma_layout:
+                    n_vis = sum(1 for a in d.get("aois", []) if a.get("vis"))
+                    if n_vis > self.n_vis:
+                        # Se abrió algo (menú, resultados): los menús de
+                        # «hover» se cierran enseguida, así que no se espera.
+                        self.urgente = True
+                    self.n_vis = n_vis
                     self.firma_layout = firma
                     self.t_layout = now
+            elif k == "click":
+                # Justo al pulsar (antes de que cambie la página): es
+                # exactamente lo que el participante tenía delante.
+                threading.Thread(target=self._capturar, args=(True,),
+                                 daemon=True).start()
 
     def bucle(self) -> None:
         while True:
@@ -421,6 +434,11 @@ class _Capturador:
                 emit("aviso", detalle=f"captura: {e}")
 
     def _quizas_capturar(self) -> None:
+        with self._lock:
+            urgente, self.urgente = self.urgente, False
+        self._capturar(urgente)
+
+    def _capturar(self, urgente: bool = False) -> None:
         cfg = _cfg
         task = int(cfg.get("task") or 0)
         carpeta = cfg.get("shots_dir")
@@ -431,15 +449,20 @@ class _Capturador:
             vp = dict(self.vp) if self.vp else None
             if (self.win is None or not self.inyectado or vp is None
                     or self.ocupado or self.fallos >= 3
-                    or now - self.t_vp < self.QUIETO_S
-                    or now - self.t_layout < self.QUIETO_S
-                    or now - self.ultimo < self.MIN_ENTRE_S
                     or self.n.get(task, 0) >= self.MAX_POR_TAREA):
+                return
+            if urgente:
+                if now - self.ultimo < 0.3:
+                    return
+            elif (now - self.t_vp < self.QUIETO_S
+                    or now - self.t_layout < self.QUIETO_S
+                    or now - self.ultimo < self.MIN_ENTRE_S):
                 return
             url = str(vp.get("url") or "").split("#")[0]
             vista = (task, url, vp.get("sx"), int(vp.get("sy") or 0) // 40,
                      vp.get("iw"), vp.get("ih"), self.firma_layout)
-            if now - self.vistos.get(vista, -1e9) < self.REPETIR_S:
+            if (not urgente and
+                    now - self.vistos.get(vista, -1e9) < self.REPETIR_S):
                 return
             self.vistos[vista] = now
             self.ocupado = True
@@ -447,6 +470,7 @@ class _Capturador:
             n = self.n.get(task, 0) + 1
             self.n[task] = n
             t_inicio = now
+            n_vis = self.n_vis
 
         os.makedirs(carpeta, exist_ok=True)
         nombre = f"t{task}_{n:03d}.jpg"
@@ -455,7 +479,9 @@ class _Capturador:
         def listo(ok: bool) -> None:
             with self._lock:
                 self.ocupado = False
-                movido = self.t_vp > t_inicio      # hubo scroll durante la captura
+                # hubo scroll durante la captura (en las urgentes no se
+                # descarta: es el último instante antes de un clic)
+                movido = self.t_vp > t_inicio and not urgente
                 if not ok:
                     self.fallos += 1
                     if self.fallos == 3:
@@ -472,7 +498,8 @@ class _Capturador:
                 ev = {"k": "shot", "file": nombre, "task": task,
                       "url": vp.get("url"), "sx": vp.get("sx"),
                       "sy": vp.get("sy"), "iw": vp.get("iw"),
-                      "ih": vp.get("ih"), "dpr": vp.get("dpr")}
+                      "ih": vp.get("ih"), "dpr": vp.get("dpr"),
+                      "n_vis": n_vis, "urgente": urgente}
                 emit("web", d=json.dumps(ev))
 
         try:

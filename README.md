@@ -274,6 +274,7 @@ precisión.
 | :--- | :--- |
 | `"text": "Mis Solicitudes"` | **La más fácil:** el texto visible del elemento (o su `aria-label`, `title`, `placeholder`). Sin importar mayúsculas ni acentos; una lista `["Apps", "Accesos"]` vale si aparece cualquiera. Con `"selector"` a la vez, se sube desde ese texto al contenedor más cercano que lo cumpla (`"selector": "section, [class*='card' i]"` = toda la tarjeta). No hace falta ver el HTML. |
 | `"selector": "nav"` | **Recomendada.** Selector CSS. El navegador mide el elemento real (con scroll, cambios de tamaño, menús desplegables…). Requiere el [script del navegador](#-script-del-navegador-tampermonkey). Para encontrar el selector: clic derecho sobre el elemento → *Inspeccionar* → clic derecho en el nodo → *Copiar → Copiar selector*. |
+| `"grow": true` (junto a `text` + `selector`) | Si ningún contenedor del `selector` rodea al texto, usa el bloque que lo rodea (título + contenido) en vez de dejar el AOI sin medir. |
 | `"opens": "Trayecto UDEM"` | El **botón que abre el menú** donde aparece ese texto: para íconos sin texto (como la cuadrícula 3×3). |
 | `"rect": [x, y, ancho, alto]` | Rectángulo manual. Con `"space": "viewport"` (por defecto) son píxeles de pantalla a 1920×1080 (se escalan solos) y sólo sirve si la página **no se desplaza**. Con `"space": "page"` son píxeles CSS de la página completa (necesita el script). |
 
@@ -284,9 +285,11 @@ anterior y el informe dice cuáles hizo y en qué segundo.
 | Paso | Se cumple cuando… |
 | :--- | :--- |
 | `{"click": "aoi"}` | hace clic sobre ese AOI (o sobre su texto) |
+| `{"hover": "aoi"}` | pasa el ratón por encima (el ratón se registra 4 veces/s sólo durante las tareas) |
+| `{"point": "aoi"}` | clic **o** ratón encima: para menús que se abren con *hover*, como la cuadrícula 3×3 |
 | `{"visible": "aoi"}` | el AOI aparece (p. ej. se abre un menú o salen resultados) |
 | `{"scroll_to": "aoi"}` | baja la página hasta tenerlo en pantalla |
-| `{"look": "aoi"}` | fija la mirada en él |
+| `{"look": "aoi"}` | fija la mirada en él (con un margen igual a ¾ del error medido de esa sesión, máx. 250 px) |
 | `{"navigate": true}` | se carga otra página |
 | `{"leave_site": true}` | se abre un sitio de otro dominio (p. ej. Trayecto UDEM) |
 
@@ -476,6 +479,13 @@ resultados:
 * Por eso los AOI deben ser **bloques grandes** (menú, banner, tarjeta,
   formulario), **no palabras ni iconos pequeños**. El informe marca con ⚠ los
   AOI menores que el doble del error.
+* **Cada imagen dice su precisión** («±N px»); si es mayor de 200 px
+  avisa que se lean zonas, no elementos pequeños.
+* **Si la calibración sale floja varias veces:** luz de frente (nunca
+  una ventana detrás), cámara a la altura de los ojos, ~60 cm, lentes
+  sin reflejos (o sin lentes si se ve bien) y la cabeza quieta durante
+  los puntos. La corrección por clics recupera buena parte del error
+  durante las tareas.
 * **Corrección por clics (automática).** Si el participante se acomoda
   distinto después de calibrar, la mirada queda desplazada de forma casi
   constante. Al hacer clic la persona mira lo que pulsa, así que el
@@ -627,8 +637,17 @@ pantalla, con verdad conocida):
 | Acercarse/alejarse | 222 px | 51 px |
 | Movimiento combinado | 946 px | 53 px |
 
-(Con el ruido real de landmarks, ≈ 1 px: 610 px frente a 193 px.) El error ya
-no depende del movimiento. `validacion.py` repite esta medición con el código
+El error ya no depende del movimiento.
+
+**Ruido del iris y «mirada que se va al centro».** El iris de una webcam
+tiene 2–4 px de ruido. Si la calibración se ajusta con cada muestra, ese
+ruido encoge la mirada estimada hacia el centro (en el simulador, la
+vertical quedaba al 40–60 % de su tamaño y el error por fijación en
+≈ 220 px). Por eso el ajuste usa la **mediana de cada punto de
+calibración**: la escala queda correcta y el error por fijación baja
+≈ 23 % (221 → 170 px con 3 px de ruido). El RMS que muestra la
+calibración es el de esas medianas, es decir, el error a nivel de
+fijación (lo mismo que mide la verificación). `validacion.py` repite esta medición con el código
 de producción en cada ejecución.
 
 ### Del ruido a las fijaciones

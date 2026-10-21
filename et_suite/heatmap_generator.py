@@ -88,7 +88,19 @@ def _ascii(s) -> str:
     return "".join(c for c in s if ord(c) < 128 and not unicodedata.combining(c))
 
 
+def _precision_px(an: Analysis) -> Optional[float]:
+    """Error estimado de la mirada de la sesión (px): el de los clics tras
+    corregir si se corrigió; si no, el de la verificación."""
+    sm = an.metrics.get("session", {})
+    cc = sm.get("click_correction") or {}
+    if cc.get("applied") and cc.get("err_after_px"):
+        return float(cc["err_after_px"])
+    v = sm.get("val_post_px") or sm.get("val_pre_px") or sm.get("cal_rms_px")
+    return float(v) if v else None
+
+
 def _with_header(img: np.ndarray, title: str, lines: List[str]) -> np.ndarray:
+    lines = [ln for ln in lines if ln]
     """
     Añade ARRIBA de la imagen una franja blanca con título y explicación
     (sin tapar la página).  Usa Pillow para que se vean acentos y «».
@@ -445,6 +457,11 @@ class HeatmapGenerator:
                               []).append(f)
         urls = sorted(por_url, key=lambda u: -sum(f.dur_ms
                                                    for f in fx_url.get(u, [])))
+        err = _precision_px(an)
+        nota_err = ("" if err is None else
+                    f"Precisión de la mirada: ±{err:.0f} px"
+                    + (" — BAJA: lee las zonas, no elementos pequeños."
+                       if err > 200 else "."))
         out: List[str] = []
         for k, url in enumerate(urls[:max_views], start=1):
             fx = fx_url.get(url, [])
@@ -461,7 +478,7 @@ class HeatmapGenerator:
                                 [f"Página: {ruta}",
                                  f"{len(fx)} fijaciones · {secs:.1f} s mirando. "
                                  "Rojo = donde más tiempo miró; sin color = "
-                                 "casi no miró."])
+                                 "casi no miró.", nota_err])
             out.append(self._save(heat, f"{out_prefix}_tarea{task_id}"
                                         f"_vista{k}_calor.png"))
 
@@ -473,7 +490,7 @@ class HeatmapGenerator:
                                 [f"Página: {ruta}",
                                  "El número es el ORDEN (1 = lo primero que "
                                  "miró); el círculo crece con el tiempo que "
-                                 "se quedó ahí."])
+                                 "se quedó ahí.", nota_err])
             out.append(self._save(path, f"{out_prefix}_tarea{task_id}"
                                         f"_vista{k}_recorrido.png"))
         return out
@@ -539,7 +556,11 @@ class HeatmapGenerator:
         s = min(1.0, _MAX_PAGE_W / W, _MAX_PAGE_H / H)
         cw, ch = max(10, int(W * s)), max(10, int(H * s))
         canvas = np.full((ch, cw, 3), 225, dtype=np.uint8)
-        for e in sorted(shots, key=lambda e: e.get("t_ms", 0)):
+        # Primero las vistas «normales» y encima las que tienen un menú o
+        # resultados abiertos (más AOI visibles): así el menú de cuadrícula
+        # no queda tapado por una captura posterior con el menú cerrado.
+        for e in sorted(shots, key=lambda e: (int(e.get("n_vis") or 0),
+                                              e.get("t_ms", 0))):
             img = cv2.imread(os.path.join(shots_dir, str(e.get("file"))))
             if img is None:
                 continue

@@ -234,7 +234,7 @@ def _write_tables(study: Study, analyses: List[Analysis],
                 t.get("flow_done", ""), t.get("flow_total", ""),
                 "" if t.get("flow_complete") is None
                 else int(t["flow_complete"]),
-                " | ".join(f"{'+' if p['done'] else '-'}{p['id']}"
+                " | ".join(f"{'+' if p['done'] else ('?' if p['done'] is None else '-')}{p['id']}"
                            + (f"@{p['t_s']:.1f}s" if p["done"] else "")
                            for p in t.get("flow") or []),
                 t.get("notes", "")])
